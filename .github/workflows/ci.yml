@@ -1,0 +1,83 @@
+name: CI
+
+# Every push and every pull request, so a change is known-good before it is
+# tagged. The release workflow builds the Windows and macOS packages on a tag;
+# this one answers the cheaper question first: do the checks still pass?
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer commit on the same branch supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend tests, types, and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Typecheck
+        run: npm run typecheck --prefix frontend
+
+      - name: Unit tests
+        run: npm test --prefix frontend
+
+      # A passing typecheck does not prove the bundle builds, so build it too.
+      - name: Build the production bundle
+        run: npm run build --prefix frontend
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      # Rendering, loudness, and export tests shell out to FFmpeg. Without it
+      # they fail as FileNotFoundError rather than as real regressions.
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+
+      # pytest, not `unittest discover`: the suite mixes unittest.TestCase
+      # classes with pytest fixtures and parametrize, and unittest collects
+      # only the former.
+      #
+      # The speech model is never downloaded here: faster-whisper is imported
+      # lazily and the transcription tests mock the model.
+      - name: Unit tests
+        run: python -m pytest backend/tests -q

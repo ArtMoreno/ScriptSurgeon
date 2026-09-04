@@ -1,0 +1,21 @@
+{
+  "name": "ScriptSurgeon",
+  "short_name": "ScriptSurgeon",
+  "description": "Free, local-first transcript audio editing with a Windows installer and planned macOS DMG.",
+  "start_url": "./",
+  "display": "browser",
+  "background_color": "#fffcf7",
+  "theme_color": "#202325",
+  "icons": [
+    {
+      "src": "assets/ember-cutwave-256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/ember-cutwave-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}

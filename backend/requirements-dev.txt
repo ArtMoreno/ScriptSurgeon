@@ -1,0 +1,8 @@
+# Test-only dependencies. Kept out of requirements.txt so the packaged desktop
+# build does not carry them.
+#
+# The suite mixes unittest.TestCase classes with pytest fixtures and
+# parametrize, so pytest is the runner that collects all of it. Running
+# `unittest discover` silently skips the parametrized fcpxml and timeline tests.
+-r requirements.txt
+pytest==9.1.1

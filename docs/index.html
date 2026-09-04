@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#171a1c">
+    <meta name="description" content="ScriptSurgeon is a free, open-source, local-first transcript audio editor for Windows and macOS. Cut audio by editing text, clean it up, and export it - no account, no cloud, no paid tier.">
+    <meta name="color-scheme" content="light">
+    <link rel="canonical" href="https://artmoreno.github.io/ScriptSurgeon/">
+    <link rel="icon" type="image/png" href="assets/ember-cutwave-256.png">
+    <link rel="apple-touch-icon" href="assets/ember-cutwave-256.png">
+    <link rel="manifest" href="site.webmanifest">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="ScriptSurgeon — Free, local audio editing by transcript">
+    <meta property="og:description" content="A free, open-source local audio editor for Windows and macOS: review-first cleanup, precise pacing, retake choice, chapters, and timeline handoff. Every feature included.">
+    <meta property="og:url" content="https://artmoreno.github.io/ScriptSurgeon/">
+    <meta property="og:image" content="https://artmoreno.github.io/ScriptSurgeon/assets/ss-social-card.png">
+    <meta property="og:image:alt" content="The ScriptSurgeon editor: a transcript above a waveform timeline.">
+    <meta name="twitter:card" content="summary_large_image">
+    <title>ScriptSurgeon — Edit audio by editing text</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="ScriptSurgeon home">
+          <img src="assets/ember-cutwave-256.png" width="38" height="38" alt="">
+          <span><strong>ScriptSurgeon</strong><small>Edit audio by editing text</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="Primary navigation">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#free">Free</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#downloads">Downloads</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon" rel="noreferrer">GitHub</a>
+          <a href="https://artmoreno.github.io/ScriptSurgeon/" rel="noreferrer">ScriptSurgeon website</a>
+        </nav>
+        <a class="button button-compact button-primary" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest" rel="noreferrer">Latest release</a>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="shell hero-copy-row">
+          <div class="hero-copy">
+            <p class="hero-release"><span>Now fully free</span> Every feature, including delivery and timeline handoff, in every build.</p>
+            <h1 id="hero-title">Your audio.<br><span>Under the knife.</span></h1>
+            <p>ScriptSurgeon turns speech into an editable transcript. Delete a word and the audio goes with it. Review cleanup, tune pacing, choose the better take, and export a delivery-ready edit. All on your device, free and open source.</p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest" rel="noreferrer">Download for Windows</a>
+              <a class="button button-outline" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest" rel="noreferrer">Download for macOS</a>
+            </div>
+          </div>
+          <aside class="local-card" aria-label="Local-first privacy summary">
+            <strong>Local by default</strong>
+            <ul>
+              <li>No audio upload</li>
+              <li>No accounts</li>
+              <li>No API keys</li>
+              <li>Your device</li>
+            </ul>
+          </aside>
+        </div>
+
+        <div class="shell hero-app-wrap">
+          <figure class="hero-app">
+            <img src="assets/ss-editor.webp" width="1800" height="1125" loading="eager" decoding="async" alt="The ScriptSurgeon editor: an editable transcript with pause markers above a waveform timeline">
+          </figure>
+        </div>
+
+        <ol class="shell workflow-strip" id="workflow" aria-label="ScriptSurgeon workflow">
+          <li><span>1</span><div><strong>Record</strong><small>Capture locally with your mic.</small></div></li>
+          <li><span>2</span><div><strong>Transcribe</strong><small>Speech to text on your machine.</small></div></li>
+          <li><span>3</span><div><strong>Cut</strong><small>Edit the transcript. Audio cuts instantly.</small></div></li>
+          <li><span>4</span><div><strong>Restore</strong><small>Bring words and takes back anytime.</small></div></li>
+          <li><span>5</span><div><strong>Export</strong><small>WAV, MP3, captions, or an NLE timeline.</small></div></li>
+        </ol>
+      </section>
+
+      <section class="release-band" id="free" aria-labelledby="release-title">
+        <div class="shell release-grid">
+          <div class="release-copy">
+            <p class="eyebrow eyebrow-forest">Free and open source</p>
+            <h2 id="release-title">Everything.<br>Nothing held back.</h2>
+            <p>There is no paid tier, no account, and no trial that expires. Every capability below ships in every build, on Windows and macOS, under the MIT licence. Packages are published on GitHub Releases only after their native build and smoke checks pass.</p>
+            <div class="release-actions">
+              <a class="button button-primary" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest" rel="noreferrer">Open latest release</a>
+              <a class="button button-light" href="#downloads">Download details</a>
+            </div>
+          </div>
+          <ul class="release-list" aria-label="Release highlights">
+            <li><strong>Cleanup you can review</strong><span>Preview filler, pause, and retake suggestions. Hear the change, Keep any item, then apply only the edits you select.</span></li>
+            <li><strong>Filler safeguards</strong><span>Context-sensitive words stay review-first. Suggestions never become automatic deletions.</span></li>
+            <li><strong>Pacing you set</strong><span>Choose Conversation, Podcast, Tight, or Custom—and tune detection and retained room tone, even per gap.</span></li>
+            <li><strong>Choose the better take</strong><span>Compare candidate takes in context and select the take to keep. Change or restore that choice later.</span></li>
+            <li><strong>Chapters that deliver</strong><span>Add markers and chapters, then export chapter WAV clips, a chapter list, TXT headings, or VTT chapter cues.</span></li>
+            <li><strong>Finish somewhere else</strong><span>Export the cut as an EDL or Final Cut XML, described against your original recording rather than a render.</span></li>
+            <li><strong>A recorder you can set up first</strong><span>Pick your input, check the level before the take, choose raw capture or cleanup, pause and resume mid-take, and keep earlier takes to compare.</span></li>
+            <li><strong>Delivery, included</strong><span>MP3, background noise cleanup, loudness normalize to the -16 LUFS spoken-word target, and chapter delivery. All of it, free.</span></li>
+            <li><strong>A calmer editor</strong><span>Dark mode, a light-mode toggle, and Full, Compact, or Hide timeline views.</span></li>
+            <li><strong>Windows installer</strong><span>Get the validated desktop installer from the latest GitHub Release.</span></li>
+            <li><strong>macOS DMGs</strong><span>Native Apple Silicon (macOS 14+) and Intel (macOS 13+) packages are released after their macOS build and smoke checks pass.</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature-band feature-text" id="features" aria-labelledby="text-edit-title">
+        <div class="shell feature-grid">
+          <div class="feature-copy">
+            <p class="eyebrow">Review-first cleanup</p>
+            <h2 id="text-edit-title">Clean the take.<br>Keep the intent.</h2>
+            <p>Review independent filler, gap, and retake suggestions before any audio changes. Nothing is ever applied automatically: compare the takes, audition the cut, then apply only what you choose. When a suggestion is held back, the app tells you which safeguard held it.</p>
+            <ul class="check-list">
+              <li>Audition original and edited context</li>
+              <li>Keep or restore any proposal</li>
+              <li>Conservative filler safeguards</li>
+            </ul>
+          </div>
+          <figure class="feature-screen transcript-screen">
+            <img src="assets/ss-retakes.webp" width="1800" height="1125" loading="lazy" decoding="async" alt="The cleanup workbench reviewing retakes, with two candidate takes and a recommendation">
+          </figure>
+        </div>
+      </section>
+
+      <section class="feature-band feature-restore" aria-labelledby="restore-title">
+        <div class="shell feature-grid feature-grid-reverse">
+          <div class="restore-card" aria-label="Restorable edit summary">
+            <div class="restore-toolbar"><span>Removed words</span><span>3 edits</span></div>
+            <ol>
+              <li><span>um</span><small>00:24.02</small><strong>Restore</strong></li>
+              <li><span>you know</span><small>00:24.11</small><strong>Restore</strong></li>
+              <li><span>like</span><small>00:24.73</small><strong>Restore</strong></li>
+            </ol>
+          </div>
+          <div class="feature-copy">
+            <p class="eyebrow eyebrow-forest">Pacing and retakes</p>
+            <h2 id="restore-title">Set the rhythm.<br>Choose the take.</h2>
+            <p>Choose a pacing preset or an exact room-tone target for a pause. Repeated lines stay review-first, so you choose the take that belongs.</p>
+            <ul class="check-list check-list-forest">
+              <li>Conversation, Podcast, Tight, or Custom pacing</li>
+              <li>Exact per-gap targets</li>
+              <li>Speaker-aware retake candidates</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band feature-record" aria-labelledby="record-title">
+        <div class="shell feature-grid">
+          <div class="feature-copy">
+            <p class="eyebrow">Record and insert</p>
+            <h2 id="record-title">Add new audio<br>right in place.</h2>
+            <p>Start a project from your microphone, or record a missing line inside an existing edit and drop it exactly where it belongs.</p>
+            <ul class="check-list">
+              <li>Choose your input and check the level first</li>
+              <li>Raw capture, or the browser's noise cleanup</li>
+              <li>Pause mid-take and keep takes to compare</li>
+            </ul>
+          </div>
+          <figure class="feature-screen timeline-screen">
+            <img src="assets/ss-recorder.webp" width="1800" height="1125" loading="lazy" decoding="async" alt="The insert recorder with microphone selection, an input-processing choice, and a level check">
+          </figure>
+        </div>
+      </section>
+
+      <section class="feature-band feature-delivery" aria-labelledby="delivery-title">
+        <div class="shell feature-grid feature-grid-reverse">
+          <div class="delivery-card" aria-label="Chapter delivery preview">
+            <div class="delivery-toolbar"><span>Chapter delivery</span><span>Local files</span></div>
+            <ol>
+              <li><time>00:00</time><strong>Opening</strong><span>Marker</span></li>
+              <li><time>01:42</time><strong>Key point</strong><span>Chapter</span></li>
+              <li><time>03:18</time><strong>Wrap up</strong><span>Chapter</span></li>
+            </ol>
+            <p>Chapter WAV · list · TXT · VTT</p>
+          </div>
+          <div class="feature-copy">
+            <p class="eyebrow eyebrow-forest">Markers and chapters</p>
+            <h2 id="delivery-title">Find the moment.<br>Deliver the story.</h2>
+            <p>Save markers at the edit, turn them into chapters, and generate local chapter clips, lists, headings, and cues for handoff.</p>
+            <ul class="check-list check-list-forest">
+              <li>Chapter range WAV exports</li>
+              <li>Chapter lists and TXT headings</li>
+              <li>Optional VTT chapter cues</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band feature-handoff" aria-labelledby="handoff-title">
+        <div class="shell feature-grid">
+          <div class="feature-copy">
+            <p class="eyebrow">Timeline handoff</p>
+            <h2 id="handoff-title">Finish it<br>somewhere else.</h2>
+            <p>Not every edit ends here. Export the cut as an EDL or Final Cut XML: a list of in and out points against your original recording rather than a render, so the handoff is instant and the source stays untouched.</p>
+            <ul class="check-list">
+              <li>Final Cut XML keeps clip names, markers, and inserted takes</li>
+              <li>Frame-based, so edit points land on your timeline's frames</li>
+              <li>The exported WAV or MP3 stays the sample-accurate version</li>
+            </ul>
+          </div>
+          <figure class="feature-screen transcript-screen">
+            <img src="assets/ss-editor-light.webp" width="1800" height="1125" loading="lazy" decoding="async" alt="The ScriptSurgeon editor in light mode, showing the export format picker">
+          </figure>
+        </div>
+      </section>
+
+      <section class="privacy" id="privacy" aria-labelledby="privacy-title">
+        <div class="shell privacy-grid">
+          <div class="privacy-copy">
+            <p class="eyebrow eyebrow-inverse">Your data stays local</p>
+            <h2 id="privacy-title">No cloud.<br>No compromises.</h2>
+            <p>Projects, transcripts, previews, and exports stay on your device in normal use. No account or audio upload is required.</p>
+          </div>
+          <div class="privacy-proof">
+            <div><strong>On your device</strong><span>Editing, previews, and exports stay local.</span></div>
+            <div><strong>No accounts</strong><span>No sign-up is required to use the editor.</span></div>
+            <div><strong>No API keys</strong><span>No paid speech service is required for normal use.</span></div>
+            <div><strong>You're in control</strong><span>Your project files remain yours.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="install" id="downloads" aria-labelledby="install-title">
+        <div class="shell install-grid">
+          <div class="install-copy">
+            <p class="eyebrow">Desktop downloads</p>
+            <h2 id="install-title">Start with the<br>latest release.</h2>
+            <p>Download the Windows installer or native macOS DMG from GitHub Releases after its package checks finish.</p>
+            <div class="install-actions">
+              <a class="button button-primary" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest" rel="noreferrer">Windows installer</a>
+              <a class="button button-light" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest" rel="noreferrer">macOS DMG</a>
+            </div>
+          </div>
+          <div class="code-card">
+            <div class="code-card-header"><span>Release availability</span></div>
+            <pre id="macos"><code>Windows installer
+  Available from the latest GitHub Release.
+
+macOS DMGs
+  Native Apple Silicon (macOS 14+) and Intel (macOS 13+) builds are attached to GitHub Releases
+  only after their native build and smoke checks pass.
+
+  The initial DMGs are ad-hoc signed but not notarized.
+  Verify their checksum and use macOS approval only if you trust them.
+
+Source builds
+  Windows source-build instructions remain in the README.</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="support" aria-labelledby="support-title">
+        <div class="shell support-inner">
+          <div><h2 id="support-title">Love ScriptSurgeon?</h2><p>It is free and it stays free. Starring the repository is what helps other people find it &mdash; a coffee keeps the independent tools moving.</p></div>
+          <div class="support-actions">
+            <a class="button button-dark" href="https://github.com/ArtMoreno/ScriptSurgeon" rel="noreferrer">Star on GitHub</a>
+            <a class="button button-dark" href="https://github.com/ArtMoreno/ScriptSurgeon/issues" rel="noreferrer">Buy me a coffee</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-grid">
+        <a class="brand footer-brand" href="#top">
+          <img src="assets/ember-cutwave-256.png" width="34" height="34" alt="">
+          <span><strong>ScriptSurgeon</strong><small>Edit audio by editing text.</small></span>
+        </a>
+        <nav aria-label="Footer navigation">
+          <a href="https://artmoreno.github.io/ScriptSurgeon/" rel="noreferrer">ScriptSurgeon website</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon/blob/main/CONTRIBUTING.md" rel="noreferrer">Contributing</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon/blob/main/LICENSE" rel="noreferrer">MIT License</a>
+          <a href="notices.html">Licenses &amp; notices</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon/security" rel="noreferrer">Security</a>
+        </nav>
+        <p>© 2026 ScriptSurgeon contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "scriptsurgeon-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/lib/api.test.ts src/lib/cleanup.test.ts src/lib/gapPacing.test.ts src/lib/timeline.test.ts src/lib/markers.test.ts src/lib/player.test.ts src/lib/projectRecording.test.ts src/lib/transcriptionStatus.test.ts src/lib/nativeRecordingClose.test.ts src/lib/recorderSession.test.ts src/lib/levelMeter.test.ts src/lib/integrations.test.ts src/lib/seekBus.test.ts src/lib/subtitles.test.ts src/lib/transcriptSearch.test.ts src/lib/workspacePreferences.test.ts src/store.test.ts",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "wavesurfer.js": "^7.8.15",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^6.0.5",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.6.3",
+    "vite": "^8.2.1"
+  }
+}

@@ -1,0 +1,267 @@
+name: Build and publish desktop packages
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Read release version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if ($tag -notmatch '^v(?<version>[0-9A-Za-z][0-9A-Za-z._+-]{0,63})$') {
+            throw "Tag '$tag' is not a supported ScriptSurgeon release version."
+          }
+          "value=$($Matches.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Stage pinned Windows build tools
+        shell: pwsh
+        run: |
+          $ffmpegVersion = '8.1.2'
+          $ffmpegArchive = Join-Path $env:RUNNER_TEMP "ffmpeg-$ffmpegVersion-full_build.7z"
+          $ffmpegRoot = Join-Path $env:RUNNER_TEMP "ffmpeg-$ffmpegVersion"
+          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$ffmpegVersion-full_build.7z"
+          $expectedSha256 = '0fff188997a499b5382e0f66e845d4556c48c54f0113ebed4853d556dbdd7059'
+
+          curl.exe --fail --location --retry 5 --retry-all-errors --connect-timeout 30 `
+            --output $ffmpegArchive $ffmpegUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned FFmpeg runtime download failed.' }
+          $actualSha256 = (Get-FileHash -LiteralPath $ffmpegArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "Pinned FFmpeg checksum mismatch: expected $expectedSha256, received $actualSha256"
+          }
+          New-Item -ItemType Directory -Path $ffmpegRoot -Force | Out-Null
+          & 7z.exe x $ffmpegArchive "-o$ffmpegRoot" -y | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned FFmpeg runtime extraction failed.' }
+          $ffmpeg = Get-ChildItem -LiteralPath $ffmpegRoot -Filter ffmpeg.exe -File -Recurse |
+            Where-Object { $_.FullName -match '\\bin\\ffmpeg\.exe$' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $ffmpeg) { throw "Pinned FFmpeg runtime was not found under $ffmpegRoot" }
+          "WINDOWS_FFMPEG=$ffmpeg" >> $env:GITHUB_ENV
+
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+
+      - name: Build and smoke-test the Windows payload
+        shell: pwsh
+        env:
+          SCRIPTCUT_DATA_DIR: ${{ runner.temp }}\scriptsurgeon-windows-payload-data
+        run: |
+          $ffmpeg = $env:WINDOWS_FFMPEG
+          if (-not (Test-Path -LiteralPath $ffmpeg -PathType Leaf)) {
+            throw "Pinned FFmpeg runtime was not found: $ffmpeg"
+          }
+          $banner = (& $ffmpeg -version | Select-Object -First 1)
+          if ($banner -notmatch '^ffmpeg version 8\.1\.2-full_build-www\.gyan\.dev') {
+            throw "Unexpected Windows FFmpeg runtime: $banner"
+          }
+          & .\scripts\build.ps1 -Version '${{ steps.version.outputs.value }}' -FfmpegSource $ffmpeg
+          if ($LASTEXITCODE -ne 0) { throw 'Windows payload build failed.' }
+          $payloadSmoke = Start-Process -FilePath .\dist\ScriptSurgeon\ScriptSurgeon.exe `
+            -ArgumentList '--smoke-test' -Wait -PassThru -WindowStyle Hidden
+          if ($payloadSmoke.ExitCode -ne 0) {
+            throw "Windows payload smoke test failed with exit code $($payloadSmoke.ExitCode)."
+          }
+
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "Inno Setup compiler was not found: $iscc"
+          }
+          $payload = (Resolve-Path -LiteralPath .\dist\ScriptSurgeon).Path
+          & $iscc "/DAppVersion=${{ steps.version.outputs.value }}" "/DBuildRoot=$payload" .\installer\ScriptSurgeon.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Windows installer compilation failed.' }
+
+      - name: Smoke-test the installed Windows application
+        shell: pwsh
+        env:
+          SCRIPTCUT_DATA_DIR: ${{ runner.temp }}\scriptsurgeon-windows-installer-data
+        run: |
+          $installer = Get-ChildItem -LiteralPath .\release -Filter 'ScriptSurgeon-Setup-*-windows-x64.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'Windows installer was not created.' }
+          $installRoot = Join-Path $env:RUNNER_TEMP 'ScriptSurgeon-installer-smoke'
+          $installerLog = Join-Path $env:RUNNER_TEMP 'ScriptSurgeon-installer-smoke.log'
+          # The installer is intentionally per-user and does not require a
+          # non-interactive runner to approve an elevation prompt.
+          # Inno Setup is a GUI-subsystem executable. Start-Process -Wait is
+          # required here; direct PowerShell invocation can return before the
+          # installer has set an exit code.
+          $installerArgs = @(
+            '/SP-'
+            '/VERYSILENT'
+            '/SUPPRESSMSGBOXES'
+            '/NORESTART'
+            "/DIR=`"$installRoot`""
+            "/LOG=`"$installerLog`""
+          )
+          $installerProcess = Start-Process -FilePath $installer.FullName `
+            -ArgumentList $installerArgs -Wait -PassThru -WindowStyle Hidden
+          if ($installerProcess.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $installerLog -PathType Leaf) {
+              Get-Content -LiteralPath $installerLog
+            }
+            throw "Windows silent installer smoke setup failed with exit code $($installerProcess.ExitCode)."
+          }
+          $installedApp = Join-Path $installRoot 'ScriptSurgeon.exe'
+          if (-not (Test-Path -LiteralPath $installedApp -PathType Leaf)) {
+            throw "Windows installer completed without the application: $installedApp"
+          }
+          $installedSmoke = Start-Process -FilePath $installedApp -ArgumentList '--smoke-test' `
+            -Wait -PassThru -WindowStyle Hidden
+          if ($installedSmoke.ExitCode -ne 0) {
+            throw "Installed Windows smoke test failed with exit code $($installedSmoke.ExitCode)."
+          }
+
+      - name: Upload Windows release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-installer
+          path: release/ScriptSurgeon-Setup-*-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  build-macos:
+    name: macOS ${{ matrix.arch }} DMG
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+            deployment_target: "13.0"
+          - runner: macos-14
+            arch: arm64
+            deployment_target: "14.0"
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install release-source verification tools
+        run: brew install gnupg
+
+      - name: Build a self-contained FFmpeg runtime
+        id: ffmpeg
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+        run: |
+          if [ "$TARGET_ARCH" = "x64" ]; then
+            TARGET_ARCH=x86_64
+          fi
+          FFMPEG_PATH="$RUNNER_TEMP/ffmpeg-$TARGET_ARCH"
+          chmod +x scripts/build-ffmpeg-macos.sh
+          scripts/build-ffmpeg-macos.sh --arch "$TARGET_ARCH" --output "$FFMPEG_PATH"
+          echo "path=$FFMPEG_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Build and smoke-test macOS package
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          FFMPEG_PATH: ${{ steps.ffmpeg.outputs.path }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+        run: |
+          if [ "$TARGET_ARCH" = "x64" ]; then
+            TARGET_ARCH=x86_64
+          fi
+          chmod +x scripts/build-macos.sh
+          scripts/build-macos.sh \
+            --version "${GITHUB_REF_NAME#v}" \
+            --arch "$TARGET_ARCH" \
+            --ffmpeg-source "$FFMPEG_PATH" \
+            --smoke-test
+
+      - name: Upload macOS release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-dmg
+          path: release/ScriptSurgeon-*-macos-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v4
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Generate checksums and include notices
+        run: |
+          cp THIRD_PARTY_NOTICES.md release/THIRD_PARTY_NOTICES.md
+          cd release
+          sha256sum ScriptSurgeon-* THIRD_PARTY_NOTICES.md | sort > SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "ScriptSurgeon ${RELEASE_TAG#v}" \
+              --notes-file RELEASE_NOTES.md \
+              --latest
+          fi
+          gh release upload "$RELEASE_TAG" release/* --clobber
