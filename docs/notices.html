@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#171a1c">
+    <meta name="description" content="ScriptSurgeon third-party licenses, attribution, and source references for packaged releases.">
+    <meta name="color-scheme" content="light">
+    <link rel="canonical" href="https://artmoreno.github.io/ScriptSurgeon/notices.html">
+    <link rel="icon" type="image/png" href="assets/scriptsurgeon-icon-v2-256.png">
+    <link rel="apple-touch-icon" href="assets/scriptsurgeon-icon-v2-256.png">
+    <link rel="manifest" href="site.webmanifest">
+    <title>ScriptSurgeon — Licenses &amp; notices</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="index.html" aria-label="ScriptSurgeon home">
+          <img src="assets/scriptsurgeon-icon-v2-256.png" width="52" height="52" alt="ScriptSurgeon logo">
+          <span><strong>ScriptSurgeon</strong><small>Edit audio by editing text</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="Primary navigation">
+          <a href="index.html">Product page</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon" rel="noreferrer">Source</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon/releases" rel="noreferrer">Releases</a>
+        </nav>
+        <a class="button button-compact button-primary" href="index.html#downloads">Downloads</a>
+      </div>
+    </header>
+
+    <main id="main-content" class="legal-page">
+      <section class="legal-hero" aria-labelledby="page-title">
+        <div class="shell legal-content">
+          <p class="eyebrow eyebrow-forest">Release references</p>
+          <h1 id="page-title">Licenses &amp; notices</h1>
+          <p class="legal-intro">This page identifies the third-party components carried by the current Windows packaging input and links to their licenses and source references. It does not change those licenses or provide legal advice.</p>
+        </div>
+      </section>
+
+      <section class="legal-section" aria-labelledby="ffmpeg-title">
+        <div class="shell legal-content">
+          <h2 id="ffmpeg-title">FFmpeg Windows runtime</h2>
+          <p>The public Windows release workflow pins <code>ffmpeg.exe</code> identified by its version banner as <code>8.1.2-full_build-www.gyan.dev</code> and verifies the publisher-provided SHA-256 before packaging. It is Gyan's static full build and reports GPL-enabled configuration.</p>
+          <ul>
+            <li><a href="https://www.gyan.dev/ffmpeg/builds/" rel="noreferrer">Gyan FFmpeg build information and license status</a></li>
+            <li><a href="https://github.com/FFmpeg/FFmpeg/tree/n8.1.2" rel="noreferrer">Upstream FFmpeg n8.1.2 source tag</a></li>
+            <li><a href="https://www.gnu.org/licenses/gpl-3.0.html" rel="noreferrer">GNU GPL v3.0 license text</a></li>
+            <li><a href="https://ffmpeg.org/legal.html" rel="noreferrer">FFmpeg licensing information</a></li>
+          </ul>
+          <p>The full build contains FFmpeg and additional third-party libraries. Its exact composition, notices, and source obligations depend on the particular Gyan build distributed; it is not covered by ScriptSurgeon's MIT license.</p>
+        </div>
+      </section>
+
+      <section class="legal-section legal-section-paper" aria-labelledby="model-title">
+        <div class="shell legal-content">
+          <h2 id="model-title">Local speech model</h2>
+          <p>The current package input uses <a href="https://huggingface.co/Systran/faster-whisper-base" rel="noreferrer">Systran/faster-whisper-base</a>, a CTranslate2 conversion of <code>openai/whisper-base</code>. The model card lists its license as MIT.</p>
+          <ul>
+            <li><a href="https://huggingface.co/Systran/faster-whisper-base" rel="noreferrer">Model card, files, and conversion details</a></li>
+            <li><a href="https://opensource.org/license/mit/" rel="noreferrer">MIT license text</a></li>
+            <li><a href="https://github.com/SYSTRAN/faster-whisper/blob/master/LICENSE" rel="noreferrer">faster-whisper project license</a></li>
+          </ul>
+          <p>The model and its tooling remain subject to their own terms and notices.</p>
+        </div>
+      </section>
+
+      <section class="legal-section" aria-labelledby="macos-ffmpeg-title">
+        <div class="shell legal-content">
+          <h2 id="macos-ffmpeg-title">FFmpeg macOS runtime</h2>
+          <p>The macOS release workflow compiles the native <code>ffmpeg</code> executable from the signed <a href="https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz" rel="noreferrer">FFmpeg 9.0.1 source archive</a>. It verifies the upstream signature before compiling a static, architecture-matched runtime with GPL and version3 code disabled.</p>
+          <ul>
+            <li><a href="https://ffmpeg.org/ffmpeg-devel.asc" rel="noreferrer">FFmpeg release signing key</a></li>
+            <li><a href="https://ffmpeg.org/legal.html" rel="noreferrer">FFmpeg licensing and legal information</a></li>
+            <li><a href="https://github.com/ArtMoreno/ScriptSurgeon/blob/main/scripts/build-ffmpeg-macos.sh" rel="noreferrer">ScriptSurgeon macOS FFmpeg build configuration</a></li>
+          </ul>
+          <p>This is a separate runtime from the Windows Gyan full build. The release log records its exact configuration and source verification. The macOS package also includes PyAV through faster-whisper; its wheel carries separate media-library components, including MP3 and GPL-bearing components. Keep the applicable upstream notices and source/build references with each redistributed asset.</p>
+        </div>
+      </section>
+
+      <section class="legal-section" aria-labelledby="distribution-title">
+        <div class="shell legal-content legal-callout">
+          <h2 id="distribution-title">Release distribution</h2>
+          <p>Release maintainers should keep the notice, applicable upstream notices, and exact source/build references aligned with the components in each published asset. A different FFmpeg binary or model needs an updated notice. See the repository's <a href="https://github.com/ArtMoreno/ScriptSurgeon/blob/main/THIRD_PARTY_NOTICES.md" rel="noreferrer">third-party notices</a> for the release-facing source record.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-grid">
+        <a class="brand footer-brand" href="index.html">
+          <img src="assets/scriptsurgeon-icon-v2-256.png" width="34" height="34" alt="">
+          <span><strong>ScriptSurgeon</strong><small>Edit audio by editing text.</small></span>
+        </a>
+        <nav aria-label="Footer navigation">
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon/blob/main/LICENSE" rel="noreferrer">MIT License</a>
+          <a href="notices.html" aria-current="page">Licenses &amp; notices</a>
+          <a href="https://github.com/ArtMoreno/ScriptSurgeon/security" rel="noreferrer">Security</a>
+        </nav>
+        <p>© 2026 ScriptSurgeon contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

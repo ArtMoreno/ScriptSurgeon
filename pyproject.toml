@@ -1,0 +1,23 @@
+[tool.ruff]
+# Reflects the code that already exists rather than imposing a new width on it.
+# Nothing here is under 120 by accident; tighten this if the style ever changes.
+line-length = 145
+target-version = "py311"
+extend-exclude = ["vendor", "build", "dist", ".packaging-venv", "runtime-tools"]
+
+[tool.ruff.lint]
+# Deliberately modest: correctness and import hygiene, not style opinions.
+#   E/W  pycodestyle    F    pyflakes
+#   I    import order   UP   pyupgrade
+#   B    bugbear
+select = ["E", "W", "F", "I", "UP", "B"]
+
+ignore = [
+    # FastAPI's whole dependency system is function calls in argument defaults:
+    # `file: UploadFile = File(...)`. This rule is a false positive here.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests re-import and shadow deliberately while arranging fixtures.
+"backend/tests/*" = ["E501"]
