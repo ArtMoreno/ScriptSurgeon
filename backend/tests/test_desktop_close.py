@@ -1,6 +1,8 @@
+import sys
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.request import urlopen
 
 from fastapi import FastAPI
@@ -48,6 +50,47 @@ class DesktopCloseProtocolTests(unittest.TestCase):
 
 
 class DesktopShellTests(unittest.TestCase):
+    def test_macos_data_lives_outside_the_application_bundle(self):
+        with (
+            patch.object(desktop.sys, "platform", "darwin"),
+            patch.object(desktop, "INSTALL_ROOT", Path("/Applications/ScriptSurgeon.app/Contents/MacOS")),
+            patch.object(Path, "home", return_value=Path("/Users/test")),
+        ):
+            self.assertEqual(
+                desktop._default_data_dir(),
+                Path("/Users/test/Library/Application Support/ScriptSurgeon"),
+            )
+
+    @unittest.skipUnless(sys.platform == "darwin", "Requires the native macOS instance lock")
+    def test_macos_instance_lock_prevents_concurrent_writers_and_releases(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(desktop, "DATA_DIR", Path(directory)):
+            first = desktop.SingleInstance()
+            try:
+                with self.assertRaisesRegex(RuntimeError, "already open"):
+                    desktop.SingleInstance()
+            finally:
+                first.close()
+            second = desktop.SingleInstance()
+            second.close()
+
+    def test_macos_close_requires_native_confirmation_after_a_failed_save(self):
+        with patch.object(desktop.sys, "platform", "darwin"):
+            for accepted in (False, True):
+                with self.subTest(accepted=accepted):
+                    window = Mock()
+                    window.create_confirmation_dialog.return_value = accepted
+                    self.assertEqual(
+                        desktop._confirm_close_without_saving(desktop.CLOSE_SAVE_FAILED, window),
+                        accepted,
+                    )
+                    window.create_confirmation_dialog.assert_called_once()
+
+    def test_macos_close_fails_closed_when_the_native_dialog_fails(self):
+        window = Mock()
+        window.create_confirmation_dialog.side_effect = RuntimeError("Dialog unavailable")
+        with patch.object(desktop.sys, "platform", "darwin"):
+            self.assertFalse(desktop._confirm_close_without_saving(desktop.CLOSE_SAVE_FAILED, window))
+
     def test_program_files_install_uses_local_app_data(self):
         with (
             patch.object(desktop.sys, "platform", "win32"),

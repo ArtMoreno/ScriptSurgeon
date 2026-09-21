@@ -2,10 +2,11 @@
 # ScriptSurgeon - local development startup (macOS / Linux)
 set -euo pipefail
 cd "$(dirname "$0")"
+source scripts/python-env.sh
 
 echo "==> Checking prerequisites"
-command -v python3 >/dev/null || { echo "Python 3.11 or 3.12 is required"; exit 1; }
-command -v node >/dev/null || { echo "Node.js 18+ is required"; exit 1; }
+select_python
+check_node
 # SCRIPTCUT_FFMPEG points the backend at a specific binary, so accept it in place
 # of one on PATH rather than refusing to start.
 if [ -n "${SCRIPTCUT_FFMPEG:-}" ]; then
@@ -20,7 +21,7 @@ fi
 
 if [ ! -d ".venv" ]; then
   echo "==> Creating Python virtual environment"
-  python3 -m venv .venv
+  "$SCRIPTSURGEON_PYTHON" -m venv .venv
 fi
 
 echo "==> Installing Python dependencies"

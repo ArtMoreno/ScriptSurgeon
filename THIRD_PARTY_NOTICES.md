@@ -42,6 +42,15 @@ subject to the exact configuration recorded in the release build log. It is a
 different binary from the Windows Gyan GPLv3 full build and must not inherit the
 Windows license statement above.
 
+An alternative for local Apple Silicon builds is the executable from the
+`imageio-ffmpeg==0.6.0` macOS arm64 wheel:
+FFmpeg 7.1, built with `--enable-gpl` and static third-party codecs. It has no
+Homebrew library dependencies. That executable is GPL-bearing, unlike
+the minimal CLI compiled by the release workflow above. Its provenance and
+package metadata are available from
+[imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg/tree/v0.6.0).
+Run `vendor/ffmpeg/ffmpeg -version` to inspect the exact staged configuration.
+
 The macOS desktop package also contains PyAV through faster-whisper. PyAV is a
 [BSD-3-Clause Python binding for FFmpeg libraries](https://github.com/PyAV-Org/PyAV)
 whose macOS binary wheel carries its own media-library components. Packaging

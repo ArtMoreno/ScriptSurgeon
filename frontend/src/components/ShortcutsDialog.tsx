@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import { CloseIcon } from './Icons'
+import { alternateModifier, primaryModifier } from '../lib/platform'
 
 interface Shortcut {
   keys: string[]
@@ -19,7 +20,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { keys: ['Space'], description: 'Play or pause' },
       { keys: ['Enter'], description: 'Play from the focused word' },
-      { keys: ['Alt', 'click'], description: 'Play from a word without moving the selection' },
+      { keys: [alternateModifier, 'click'], description: 'Play from a word without moving the selection' },
       { keys: ['←'], description: 'Back 5 seconds (transport button)' },
       { keys: ['→'], description: 'Forward 5 seconds (transport button)' },
     ],
@@ -33,7 +34,8 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ['F2'], description: 'Correct the focused word or insert' },
       { keys: ['double-click'], description: 'Correct a word' },
       { keys: ['G'], description: 'Shorten the eligible pause at the playhead' },
-      { keys: ['Ctrl', 'Z'], description: 'Undo the last edit' },
+      { keys: [primaryModifier, 'Z'], description: 'Undo the last edit' },
+      { keys: [primaryModifier, 'Shift', 'Z'], description: 'Redo the last edit' },
     ],
   },
   {
@@ -50,7 +52,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: 'Search',
     items: [
-      { keys: ['Ctrl', 'F'], description: 'Find in the transcript' },
+      { keys: [primaryModifier, 'F'], description: 'Find in the transcript' },
       { keys: ['Enter'], description: 'Jump to the next match' },
       { keys: ['Shift', 'Enter'], description: 'Jump to the previous match' },
       { keys: ['Esc'], description: 'Close the search bar' },
@@ -66,7 +68,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
 ]
 
 function Key({ label }: { label: string }) {
-  const isChord = /^[A-Za-z0-9?←→↑↓]$|^(Space|Enter|Esc|Alt|Ctrl|Shift|F2|F10|Menu|Backspace|Delete)$/.test(label)
+  const isChord = /^[A-Za-z0-9?←→↑↓⌘]$|^(Space|Enter|Esc|Alt|Option|Ctrl|Shift|F2|F10|Menu|Backspace|Delete)$/.test(label)
   if (!isChord) {
     return <span className="text-[11px] italic text-ink-muted">{label}</span>
   }

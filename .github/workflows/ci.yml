@@ -50,8 +50,12 @@ jobs:
         run: npm run build --prefix frontend
 
   backend:
-    name: Backend tests
-    runs-on: ubuntu-latest
+    name: Backend tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -65,11 +69,21 @@ jobs:
 
       # Rendering, loudness, and export tests shell out to FFmpeg. Without it
       # they fail as FileNotFoundError rather than as real regressions.
-      - name: Install FFmpeg
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          ffmpeg -version
+
+      - name: Check Unix launcher scripts
+        run: bash -n start.sh scripts/python-env.sh scripts/build-macos.sh scripts/build-ffmpeg-macos.sh
 
       - name: Install Python dependencies
         run: |

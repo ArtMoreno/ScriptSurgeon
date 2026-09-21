@@ -11,7 +11,7 @@ Thank you for helping improve a private, local-first audio editor.
 
 ## Development setup
 
-Requirements are Python 3.11 or 3.12, Node.js 18 or newer, and FFmpeg.
+Requirements are Python 3.11 or 3.12, Node.js 20.19+ or 22.12+, and FFmpeg.
 
 ```powershell
 ./start.bat
@@ -32,6 +32,11 @@ npm run build --prefix frontend
 ```
 
 For desktop or installer changes, also run the packaging validation paths documented in `scripts/` and test upgrades against a disposable installation. Do not use a real project data directory as a test target.
+
+On macOS, replace the Python path above with `.venv/bin/python`. The CI backend
+suite runs on both Linux and macOS. To validate a native Mac package including
+the bundled offline model and media runtime, follow the macOS build instructions
+in [README.md](README.md#build-from-source-on-macos) and pass `--smoke-test`.
 
 ## Product and accessibility expectations
 

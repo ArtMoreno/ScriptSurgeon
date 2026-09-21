@@ -11,6 +11,7 @@ runtime-tools/node_modules/
 frontend/dist/
 build/
 dist/
+release/
 vendor/
 Data/
 projects/

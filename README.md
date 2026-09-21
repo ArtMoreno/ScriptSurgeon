@@ -151,9 +151,40 @@ For an offline rebuild using an existing packaging environment and frontend outp
 ./scripts/build.ps1 -SkipDependencies -SkipFrontend
 ```
 
+## Build from source on macOS
+
+Use Python 3.11 or 3.12 and Node.js 22.12 or newer. The build selects a
+supported Python automatically instead of Apple's older system Python. To
+choose an interpreter explicitly, set `SCRIPTSURGEON_PYTHON` to its full path.
+
+Build on the same architecture as the destination Mac (Apple Silicon or Intel):
+
+```bash
+cd ScriptSurgeon
+bash scripts/build-macos.sh --ffmpeg-source /absolute/path/to/ffmpeg --smoke-test
+open dist/ScriptSurgeon.app
+```
+
+The FFmpeg executable must include your Mac's architecture. For a distributable,
+self-contained FFmpeg built from verified upstream source, install GnuPG and
+the Xcode Command Line Tools, then run:
+
+```bash
+bash scripts/build-ffmpeg-macos.sh --arch "$(uname -m)" --output "$PWD/vendor/ffmpeg/ffmpeg"
+bash scripts/build-macos.sh --smoke-test
+```
+
+The first build downloads dependencies and the bundled speech model. Subsequent
+builds can use `--skip-dependencies --skip-frontend` to reuse those outputs.
+The results are `dist/ScriptSurgeon.app` and an architecture-specific DMG in
+`release/`. Drag the app to Applications or launch it directly. Local builds
+are ad-hoc signed; public distribution requires your own Apple signing and
+notarization setup. Projects and logs live in
+`~/Library/Application Support/ScriptSurgeon/`, outside the app bundle.
+
 ## Development
 
-Development requires Python 3.11 or 3.12, Node.js 18 or newer, and FFmpeg.
+Development requires Python 3.11 or 3.12, Node.js 20.19+ or 22.12+, and FFmpeg.
 
 ```powershell
 ./start.bat
@@ -175,7 +206,7 @@ The development model defaults to `base`. Set `MODEL_SIZE` to `tiny`, `small`, `
 | --- | --- |
 | `frontend/` | React, TypeScript, Zustand, and WaveSurfer transcript editor |
 | `backend/` | FastAPI project storage, transcription, rendering, and export |
-| `desktop.py` | Native Windows WebView2 shell and local process lifecycle |
+| `desktop.py` | Native Windows WebView2 / macOS Cocoa-WebKit shell and local process lifecycle |
 | `scripts/` | Packaging, icon generation, payload verification, and installation |
 | `docs/` | Dependency-free GitHub Pages product site |
 

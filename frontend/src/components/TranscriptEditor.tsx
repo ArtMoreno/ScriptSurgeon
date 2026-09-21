@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { editedGaps, editedInsertTimes, editedWordTimes } from '../lib/timeline'
 import { gapTargetsFromEdits } from '../lib/gapPacing'
 import { requestSeek } from '../lib/seekBus'
+import { primaryModifier } from '../lib/platform'
 import type { InsertClip, Word } from '../types'
 import { findMatches, stepMatch } from '../lib/transcriptSearch'
 import { AudioIcon, EditIcon } from './Icons'
@@ -824,7 +825,7 @@ export default function TranscriptEditor({
             }}
             disabled={status !== 'ready'}
             className="ml-auto h-7 rounded-md border border-line px-2 text-[11px] text-ink-muted hover:bg-canvas-soft hover:text-ink disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-            title="Find in transcript (Ctrl+F)"
+            title={`Find in transcript (${primaryModifier}+F)`}
           >
             Find
           </button>

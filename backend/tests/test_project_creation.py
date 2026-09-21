@@ -29,7 +29,9 @@ class ProjectCreationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.original_root = main.PROJECTS_DIR
-        main.PROJECTS_DIR = Path(self.temp.name) / "projects"
+        # macOS aliases /var to /private/var. Match the canonical paths used
+        # by the application so mocks exercise the same files on every OS.
+        main.PROJECTS_DIR = Path(self.temp.name).resolve() / "projects"
         main.PROJECTS_DIR.mkdir()
         self.saved_statuses = dict(main.statuses)
         self.saved_queued_ids = set(main.queued_ids)

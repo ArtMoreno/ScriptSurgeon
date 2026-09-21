@@ -5,6 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/python-env.sh"
 
 MODEL_SOURCE=""
 FFMPEG_SOURCE=""
@@ -147,10 +148,10 @@ export SCRIPTSURGEON_MAC_TARGET_ARCH="$TARGET_ARCH"
 export SCRIPTSURGEON_MAC_ICON_PATH="$ICON_STAGE"
 
 if [[ "$SKIP_DEPENDENCIES" == false ]]; then
-  require_command python3
+  select_python
   if [[ ! -x "$BUILD_PYTHON" ]]; then
     echo "==> Creating isolated macOS packaging environment"
-    python3 -m venv "$BUILD_VENV"
+    "$SCRIPTSURGEON_PYTHON" -m venv "$BUILD_VENV"
   fi
   echo "==> Installing pinned build and runtime dependencies"
   "$BUILD_PYTHON" -m pip install --upgrade pip
@@ -169,6 +170,7 @@ fi
 "$BUILD_PYTHON" -c "import PIL; assert PIL.__version__ == '12.3.0', PIL.__version__"
 
 if [[ "$SKIP_FRONTEND" == false ]]; then
+  check_node
   require_command npm
   if [[ -f "$APP_ROOT/frontend/package-lock.json" ]]; then
     echo "==> Installing locked frontend dependencies"
