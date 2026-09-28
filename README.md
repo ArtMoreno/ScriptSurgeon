@@ -36,15 +36,16 @@ ScriptSurgeon turns spoken audio into an editable transcript. Remove a word and 
 
 It is built for people who want the speed of a document editor without giving up control of the actual recording.
 
-## What's new in the September workspace update
+## What's new in v2026.09.28
 
-- **A document-first workspace:** centered transcript, contextual tools, collapsible timeline, and a searchable project home.
-- **Retakes stay under your control:** compare attempts, audition the proposed cut, choose what to keep, and undo changes. Detection handles more long restarts and corrections; uncertain cases remain review-only.
-- **A more useful recorder:** microphone selection, live input history, clipping feedback, pause/resume, take comparison and direct take downloads. Delivered audio is retained after some interruptions; full crash recovery is not yet available.
-- **More dependable delivery:** clear range durations and download feedback. WAV ranges preserve the finished render's sample rate and audio samples.
-- **Refreshed identity:** the new icon is used throughout the workspace and Windows build.
+- **Retakes that are actually found:** a balanced detection pass catches restarts longer than five words, sentences restarted after a pause, and takes separated by "sorry, let me redo that". Strict keeps the old rules; the switch is per project.
+- **One decision per retake:** take rows with playback, tinted differences, a primary Keep button, take labels in the transcript, and a "Take 2 kept" chip after applying.
+- **Reword phrases:** select words and press F2 to rewrite them as one phrase. Timing stays exact, edits are marked, and Revert to original text undoes them.
+- **A readable recorder:** round record control, live waveform, zoned level meter with peak hold, and take cards.
+- **Vim motions:** optional, off by default, in Settings. h j k l, sentence and paragraph motions, visual selection, d/c/r operators, counts, undo and redo.
+- **Rename projects** from the home page, the sidebar, or the editor title.
 
-These changes are on the current source branch. [Published installers](https://github.com/ArtMoreno/ScriptSurgeon/releases/latest) may be an earlier version. Screenshots use a demonstration project.
+[Published installers](https://github.com/ArtMoreno/ScriptSurgeon/releases/latest) for this version are built by the release workflow on Windows and macOS.
 
 ## One local workflow
 
@@ -73,6 +74,14 @@ Nothing changes until you confirm the preview.
 Removed words remain visible and restorable. Retake groups can be brought back. Inserted passages can be removed, restored, edited, or re-recorded. Multi-step undo covers the editing session.
 
 Right-click transcript words, pause markers, retake groups, or inserted passages for focused actions. `Shift+F10` opens the same menus from the keyboard.
+
+## Keyboard first, vim optional
+
+Every transcript action has a key: Backspace ripple-cuts, F2 rewords the focused word or the whole selection, Enter plays from a word, `G` shortens the pause at the playhead, and `Shift+F10` opens the actions menu. Press `?` for the full list.
+
+Turn on **Vim motions** in Settings to move and edit the way you do in an editor: `h` `l` `w` `b` by word, `j` `k` by sentence, `{` `}` by paragraph, `gg` `G` to either end; `v` for a visual selection; `x` cuts a word, `dd` cuts a sentence, `s` and `cc` reword, `rr` restores, `u` and `Ctrl+R` undo and redo. Existing shortcuts keep working and unknown keys pass through.
+
+Projects can be renamed from the home page, the project list, or by double-clicking the title in the editor.
 
 ## Add new audio right in place
 

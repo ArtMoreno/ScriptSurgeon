@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#ffffff">
-    <meta name="description" content="ScriptSurgeon is a free, open-source, local-first transcript audio editor for Windows and macOS. Cut audio by editing text, clean it up, and export it — no account, no cloud, no paid tier.">
+    <meta name="description" content="ScriptSurgeon is a free, open-source, local-first transcript audio editor for Windows and macOS. Cut audio by editing text, review retakes one decision at a time, reword phrases, and export. Optional vim motions. No account, no cloud, no paid tier.">
     <meta name="color-scheme" content="light">
     <link rel="canonical" href="https://artmoreno.github.io/ScriptSurgeon/">
     <link rel="icon" type="image/png" href="assets/scriptsurgeon-icon-v2-256.png">
@@ -12,7 +12,7 @@
     <link rel="manifest" href="site.webmanifest">
     <meta property="og:type" content="website">
     <meta property="og:title" content="ScriptSurgeon — Free, local audio editing by transcript">
-    <meta property="og:description" content="A free, open-source local audio editor for Windows and macOS: review-first cleanup, precise pacing, retake choice, chapters, and timeline handoff. Every feature included.">
+    <meta property="og:description" content="A free, open-source local audio editor for Windows and macOS: retake review that finds real restarts, phrase reword, a readable recorder, optional vim motions, chapters, and timeline handoff. Every feature included.">
     <meta property="og:url" content="https://artmoreno.github.io/ScriptSurgeon/">
     <meta property="og:image" content="https://artmoreno.github.io/ScriptSurgeon/assets/ss-editor.png">
     <meta property="og:image:alt" content="The ScriptSurgeon editor: a transcript above a waveform timeline.">
@@ -25,16 +25,19 @@
 <header class="shell header"><a class="brand" href="#top"><img src="assets/scriptsurgeon-icon-v2-256.png" width="56" height="56" alt=""><span>ScriptSurgeon</span></a><nav aria-label="Main navigation"><a href="#overview">Overview</a><a href="#downloads">Download</a><a href="https://github.com/ArtMoreno/ScriptSurgeon">GitHub</a></nav></header>
 <main class="shell" id="main">
 <section class="hero" id="top" aria-labelledby="hero-title">
-<div class="hero-copy"><p class="eyebrow">FREE <span>·</span> LOCAL <span>·</span> <b>OPEN SOURCE</b></p><h1 id="hero-title">Your audio.<br>Under the knife.</h1><h2>Edit audio by editing text.</h2><p class="intro">Turn a recording into an editable transcript.<br class="desktop-break"> Review retakes, tighten pauses, and export a cleaner take. Your files stay on your device.</p></div>
+<div class="hero-copy"><p class="eyebrow">FREE <span>·</span> LOCAL <span>·</span> <b>OPEN SOURCE</b></p><h1 id="hero-title">Your audio.<br>Under the knife.</h1><h2>Edit audio by editing text.</h2><p class="intro">Turn a recording into an editable transcript.<br class="desktop-break"> Pick the take to keep, reword a phrase, tighten pauses, and export a cleaner cut. Your files stay on your device.</p></div>
 <img class="hero-logo" src="assets/scriptsurgeon-icon-v2-1024.png" width="280" height="280" alt="ScriptSurgeon: waveform with an orange playhead">
 <div class="downloads" id="downloads"><a class="button" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest"><img src="assets/icons/windows.svg" width="24" height="24" alt="">Download for Windows</a><a class="text-link" href="https://github.com/ArtMoreno/ScriptSurgeon/releases/latest"><img src="assets/icons/apple.svg" width="23" height="23" alt="">macOS <span aria-hidden="true">→</span></a><a class="text-link" href="https://github.com/ArtMoreno/ScriptSurgeon">View source <span aria-hidden="true">→</span></a></div>
-<p class="release-note">See release notes for the latest packaged features. Installers may trail the latest source.</p>
+<p class="release-note">Version 2026.09.28: retake review that finds real restarts, phrase reword, a new recorder, project rename and optional vim motions. See the release notes for details.</p>
 </section>
-<figure class="workspace"><a href="assets/ss-editor.png" aria-label="Open full-size editor screenshot"><img src="assets/ss-editor.png" width="1440" height="874" alt="ScriptSurgeon transcript editor with retake, filler word, and pause review tools. A demonstration project is open."></a></figure>
+<figure class="workspace"><a href="assets/ss-review.png" aria-label="Open full-size retake review screenshot"><img src="assets/ss-review.png" width="1440" height="874" alt="ScriptSurgeon reviewing retakes: the transcript labels Take 1 and Take 2 and the panel shows both takes with the words that differ tinted and a Keep button. A demonstration project is open."></a></figure>
 <section class="features" id="overview" aria-label="What ScriptSurgeon does">
-<article><img class="feature-icon" src="assets/icons/mic-fill.svg" width="32" height="32" alt=""><h2>Record naturally</h2><p>Set your mic levels and pause or resume anytime. Keep your takes until you choose one.</p></article>
-<article><img class="feature-icon" src="assets/icons/skip-backward-fill.svg" width="32" height="32" alt=""><h2>Keep your best take</h2><p>Preview retakes and compare attempts before cutting. Restore changes when you need to.</p></article>
+<article><img class="feature-icon" src="assets/icons/skip-backward-fill.svg" width="32" height="32" alt=""><h2>Keep your best take</h2><p>Retake review finds real restarts, even long ones or ones after "sorry, let me redo that". Play each take, see what differs, keep one.</p></article>
+<article><img class="feature-icon" src="assets/icons/mic-fill.svg" width="32" height="32" alt=""><h2>Record naturally</h2><p>A live waveform and a zoned level meter show your gain before the take. Pause, resume, and keep every take until you choose.</p></article>
 <article><img class="feature-icon" src="assets/icons/upload.svg" width="32" height="32" alt=""><h2>Export your way</h2><p>Export WAV, MP3, transcript text, EDL, or Final Cut XML. Your audio stays on your computer.</p></article>
+<article><img class="feature-icon" src="assets/icons/pencil-fill.svg" width="32" height="32" alt=""><h2>Reword without re-recording</h2><p>Select a phrase and rewrite it. The audio and its timing stay exactly as spoken; the edit is marked and reversible.</p></article>
+<article><img class="feature-icon" src="assets/icons/keyboard-fill.svg" width="32" height="32" alt=""><h2>Vim motions, if you want them</h2><p>Turn them on in Settings: h j k l, sentence and paragraph motions, visual selection, d, c and r operators, counts, undo and redo.</p></article>
+<article><img class="feature-icon" src="assets/icons/windows.svg" width="32" height="32" alt=""><h2>Windows and macOS</h2><p>Native installers built by the release workflow, and a source tree that runs on Linux with Python, Node and FFmpeg.</p></article>
 </section>
 <section class="license" aria-labelledby="license-title"><img class="feature-icon" src="assets/icons/unlock-fill.svg" width="48" height="48" alt=""><div><h2 id="license-title">Yours to use. Yours to change.</h2><p>Free and open source under the MIT License.<br>Keep the copyright and license notice with copies.</p><div class="legal-links"><a href="#mit-license">Read MIT License <span aria-hidden="true">↗</span></a><a href="notices.html">Third-party notices <span aria-hidden="true">↗</span></a><a href="https://github.com/ArtMoreno/ScriptSurgeon/blob/main/SECURITY.md">Security <span aria-hidden="true">↗</span></a></div><details id="mit-license"><summary>MIT License</summary><pre>MIT License
 
