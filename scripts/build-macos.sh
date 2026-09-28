@@ -309,7 +309,11 @@ if [[ "$SMOKE_TEST" == true ]]; then
   SMOKE_DATA="$(mktemp -d "$BUILD_ROOT/scriptsurgeon-smoke.XXXXXX")"
   trap 'rm -rf "$ICONSET_PARENT" "$SMOKE_DATA"' EXIT
   echo "==> Running packaged smoke test"
-  SCRIPTCUT_DATA_DIR="$SMOKE_DATA" "$APP_EXECUTABLE" --smoke-test
+  if ! SCRIPTCUT_DATA_DIR="$SMOKE_DATA" "$APP_EXECUTABLE" --smoke-test; then
+    echo "Packaged smoke test failed. Application log follows." >&2
+    cat "$SMOKE_DATA/logs/scriptcut.log" >&2 2>/dev/null || true
+    exit 1
+  fi
   echo "==> Verifying MP3 export availability"
   SCRIPTCUT_FFMPEG="$FFMPEG_STAGE" "$BUILD_PYTHON" - "$BUILD_ROOT" <<'PY'
 import tempfile

@@ -718,8 +718,23 @@ def _run_native_window(server: LocalServer, ui_url: str) -> bool:
         return False
 
 
+SMOKE_TIMEOUT_SECONDS = 900
+
+
+def _arm_smoke_watchdog() -> None:
+    """Kill a smoke run that stalls, so CI fails with a message instead of timing out hours later."""
+    def expire() -> None:
+        logging.error("Packaged smoke test exceeded %s s; aborting", SMOKE_TIMEOUT_SECONDS)
+        print(f"ScriptSurgeon smoke test exceeded {SMOKE_TIMEOUT_SECONDS} s; aborting", file=sys.stderr, flush=True)
+        os._exit(3)
+    timer = threading.Timer(SMOKE_TIMEOUT_SECONDS, expire)
+    timer.daemon = True
+    timer.start()
+
+
 def _run_packaged_smoke(server: LocalServer, ui_url: str) -> None:
     """Exercise bundled model/media dependencies without opening a window."""
+    _arm_smoke_watchdog()
     smoke_dir = DATA_DIR / ".runtime-smoke"
     shutil.rmtree(smoke_dir, ignore_errors=True)
     smoke_dir.mkdir(parents=True)
@@ -795,6 +810,11 @@ def main() -> int:
             atexit.unregister(server.stop)
     except Exception as exc:
         logging.exception("ScriptSurgeon failed to start")
+        if "--smoke-test" in sys.argv:
+            # A headless smoke run has nobody to dismiss a dialog. Report on
+            # stderr and exit non-zero so the build fails instead of hanging.
+            print(f"ScriptSurgeon smoke test failed: {exc}\nLog: {LOG_DIR / 'scriptcut.log'}", file=sys.stderr)
+            return 1
         _show_error(
             "ScriptSurgeon could not start.\n\n"
             f"{exc}\n\n"
@@ -807,4 +827,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Frozen builds re-execute this binary for multiprocessing helpers (the
+    # speech runtime starts one during transcription). Without this the helper
+    # runs main() itself, fails the single-instance lock, and shows a dialog.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     raise SystemExit(main())
