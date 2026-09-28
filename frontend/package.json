@@ -7,7 +7,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "node --test src/lib/exportRange.test.ts src/lib/reword.test.ts src/lib/api.test.ts src/lib/cleanup.test.ts src/lib/gapPacing.test.ts src/lib/timeline.test.ts src/lib/markers.test.ts src/lib/player.test.ts src/lib/projectRecording.test.ts src/lib/transcriptionStatus.test.ts src/lib/nativeRecordingClose.test.ts src/lib/recorderSession.test.ts src/lib/levelMeter.test.ts src/lib/integrations.test.ts src/lib/seekBus.test.ts src/lib/subtitles.test.ts src/lib/transcriptSearch.test.ts src/lib/workspacePreferences.test.ts src/store.test.ts",
+    "test": "node --test src/lib/exportRange.test.ts src/lib/reword.test.ts src/lib/vimMotions.test.ts src/lib/api.test.ts src/lib/cleanup.test.ts src/lib/gapPacing.test.ts src/lib/timeline.test.ts src/lib/markers.test.ts src/lib/player.test.ts src/lib/projectRecording.test.ts src/lib/transcriptionStatus.test.ts src/lib/nativeRecordingClose.test.ts src/lib/recorderSession.test.ts src/lib/levelMeter.test.ts src/lib/integrations.test.ts src/lib/seekBus.test.ts src/lib/subtitles.test.ts src/lib/transcriptSearch.test.ts src/lib/workspacePreferences.test.ts src/store.test.ts",
     "build": "vite build",
     "preview": "vite preview"
   },

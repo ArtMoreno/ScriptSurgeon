@@ -21,7 +21,9 @@ import {
   resolveOpenTimelineSize,
   resolveTimelineSize,
   resolveWorkspaceTheme,
+  resolveVimMotions,
   TIMELINE_SIZE_KEY,
+  VIM_MOTIONS_KEY,
   WORKSPACE_THEME_KEY,
   type TimelineSize,
   type WorkspaceTheme,
@@ -79,6 +81,14 @@ export default function App() {
     }
   })
   const [recordingTarget, setRecordingTarget] = useState<RecordingTarget | null>(null)
+  const [vimMotions, setVimMotions] = useState(() => {
+    try { return resolveVimMotions(window.localStorage.getItem(VIM_MOTIONS_KEY)) } catch { return false }
+  })
+  const toggleVimMotions = () => setVimMotions((current) => {
+    const next = !current
+    try { window.localStorage.setItem(VIM_MOTIONS_KEY, next ? 'on' : 'off') } catch { /* Preference storage can be unavailable. */ }
+    return next
+  })
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null)
   const welcomeInput = useRef<HTMLInputElement>(null)
@@ -284,7 +294,7 @@ export default function App() {
             <WorkspaceHeader headingRef={projectHeadingRef} onHome={() => void closeProject().catch(() => undefined)} onExport={() => setExportOpen(true)} onShortcuts={openShortcuts} theme={theme} onToggleTheme={toggleTheme} />
             <div className="workspace-body">
               <div className="workspace-document">
-                <TranscriptEditor onRecordInsert={openRecording} onReplaceInsert={openReplacement} />
+                <TranscriptEditor onRecordInsert={openRecording} onReplaceInsert={openReplacement} vimMotions={vimMotions} />
             {projectId && (
               <WaveformPanel
                 onRecordInsert={() => openRecording()}
@@ -299,7 +309,19 @@ export default function App() {
               </div>
               {projectId && <TopBar panel={panel} onClosePanel={() => setPanel(null)} />}
               {panel === 'Project' && <div className="project-inspector"><Sidebar onRecordNewProject={openProjectRecording} theme={theme} onToggleTheme={toggleTheme} /></div>}
-              {panel === 'Settings' && <aside className="workspace-inspector settings-inspector"><h2>Settings</h2><button onClick={toggleTheme}>Appearance: {theme}</button><button onClick={event => openShortcuts(event.currentTarget)}>Keyboard shortcuts</button><p>ScriptSurgeon · Development preview</p><p>Projects stay on this device.</p></aside>}
+              {panel === 'Settings' && (
+                <aside className="workspace-inspector settings-inspector">
+                  <h2>Settings</h2>
+                  <button onClick={toggleTheme}>Appearance: {theme}</button>
+                  <button onClick={toggleVimMotions} aria-pressed={vimMotions}>
+                    Vim motions: {vimMotions ? 'on' : 'off'}
+                    <small>h j k l w b, d c r, x s u, v, gg G. Playback keys stay the same.</small>
+                  </button>
+                  <button onClick={event => openShortcuts(event.currentTarget)}>Keyboard shortcuts</button>
+                  <p>ScriptSurgeon · Development preview</p>
+                  <p>Projects stay on this device.</p>
+                </aside>
+              )}
               <WorkspaceRail selected={panel} onSelect={value => setPanel(current => current === value ? null : value)} />
             </div>
           </>

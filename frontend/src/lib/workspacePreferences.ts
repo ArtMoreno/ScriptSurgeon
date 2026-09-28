@@ -9,6 +9,12 @@ export const LEGACY_TIMELINE_COLLAPSED_KEY = 'scriptcut.timelineCollapsed'
 export const RECORDER_DEVICE_KEY = 'scriptsurgeon.recorderDevice'
 /** Whether the browser's AGC/noise-suppression chain is applied while capturing. */
 export const RECORDER_PROCESSING_KEY = 'scriptsurgeon.recorderProcessing'
+/** Vim-style transcript motions, off unless the editor turned them on. */
+export const VIM_MOTIONS_KEY = 'scriptsurgeon.vimMotions'
+
+export function resolveVimMotions(value: string | null | undefined): boolean {
+  return value === 'on'
+}
 
 /** The default deliberately matches the focused desktop editing surface. */
 export function resolveWorkspaceTheme(value: string | null | undefined): WorkspaceTheme {

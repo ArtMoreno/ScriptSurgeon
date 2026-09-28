@@ -60,6 +60,28 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: 'Vim motions (Settings → Vim motions: on)',
+    items: [
+      { keys: ['h', 'l', 'w', 'b'], description: 'Move by word; a count works (3w)' },
+      { keys: ['j', 'k', ')', '('], description: 'Move by sentence' },
+      { keys: ['{', '}'], description: 'Move by paragraph' },
+      { keys: ['0', '$'], description: 'Start or end of the sentence' },
+      { keys: ['gg', 'G'], description: 'First or last word' },
+      { keys: ['v'], description: 'Visual selection; motions extend it' },
+      { keys: ['x', 'X'], description: 'Cut this word or the previous one' },
+      { keys: ['d', 'motion'], description: 'Cut a range; dd cuts the sentence' },
+      { keys: ['s'], description: 'Reword this word' },
+      { keys: ['c', 'motion'], description: 'Reword a range; cc rewords the sentence' },
+      { keys: ['r', 'motion'], description: 'Restore cut words; rr restores the sentence' },
+      { keys: ['u'], description: 'Undo' },
+      { keys: ['Ctrl', 'R'], description: 'Redo' },
+      { keys: ['m', 'M'], description: 'Add a marker or start a chapter here' },
+      { keys: ['/'], description: 'Find in the transcript' },
+      { keys: ['gs'], description: 'Shorten the pause at the playhead' },
+      { keys: ['Esc'], description: 'Leave visual mode' },
+    ],
+  },
+  {
     title: 'This window',
     items: [
       { keys: ['?'], description: 'Open or close this list' },

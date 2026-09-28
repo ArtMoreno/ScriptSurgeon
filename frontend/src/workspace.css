@@ -275,3 +275,9 @@ button:focus-visible,summary:focus-visible{outline:2px solid rgb(var(--color-emb
 .recorder-foot-hint{flex:1;font-size:11px;color:rgb(var(--color-ink-muted))}
 .review-btn.is-large{height:40px;padding:0 18px;font-size:13px}
 @media(max-width:640px){.recorder-setup{grid-template-columns:1fr}.recorder-clock{font-size:26px}.recorder-head h2{font-size:16px}.recorder-foot{flex-wrap:wrap}.recorder-foot-hint{flex-basis:100%}}
+
+/* ---- Vim motions ---- */
+.vim-badge{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:7px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:.04em;color:rgb(var(--color-ink-muted));border:1px solid rgb(var(--color-line));background:rgb(var(--color-canvas-raised))}
+.vim-badge-key{color:rgb(var(--color-forest));font-weight:700}
+.vim-badge.is-visual{border-color:rgb(var(--color-ember) / .6);color:rgb(var(--color-ember-dark))}
+.settings-inspector>button small{display:block;font-size:11px;font-weight:400;color:rgb(var(--color-ink-muted));margin-top:4px}

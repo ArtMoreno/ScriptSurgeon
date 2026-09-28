@@ -9,6 +9,7 @@ import type { InsertClip, Word } from '../types'
 import { findMatches, stepMatch } from '../lib/transcriptSearch'
 import { AudioIcon, EditIcon } from './Icons'
 import TranscriptContextMenu, { type TranscriptMenuAction } from './TranscriptContextMenu'
+import { VIM_IDLE, vimKey, vimStatus, type VimState } from '../lib/vimMotions'
 
 type Item =
   | { kind: 'word'; word: Word; idx: number }
@@ -64,9 +65,12 @@ function isContextMenuKey(event: KeyboardEvent<HTMLElement>): boolean {
 export default function TranscriptEditor({
   onRecordInsert,
   onReplaceInsert,
+  vimMotions = false,
 }: {
   onRecordInsert: (trigger?: HTMLElement | null, afterWordId?: string) => void
   onReplaceInsert: (clip: InsertClip, trigger?: HTMLElement | null) => void
+  /** Vim-style keys on focused words. Off by default; toggled in Settings. */
+  vimMotions?: boolean
 }) {
   const words = useStore((state) => state.words)
   const insertClips = useStore((state) => state.insertClips)
@@ -117,6 +121,9 @@ export default function TranscriptEditor({
   const assignSpeaker = useStore((state) => state.assignSpeaker)
   const addSpeaker = useStore((state) => state.addSpeaker)
   const addMarker = useStore((state) => state.addMarker)
+  const undo = useStore((state) => state.undo)
+  const redo = useStore((state) => state.redo)
+  const shortenGapAtPlayhead = useStore((state) => state.shortenGapAtPlayhead)
 
   const [dragging, setDragging] = useState(false)
   const [correction, setCorrection] = useState<Correction | null>(null)
@@ -128,6 +135,7 @@ export default function TranscriptEditor({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const newSpeakerInputRef = useRef<HTMLInputElement>(null)
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null)
+  const [vim, setVim] = useState<VimState>(VIM_IDLE)
   // A durable retake group whose cut words are shown struck through in place.
   const [revealedGroup, setRevealedGroup] = useState<string | null>(null)
   const seekTimer = useRef<number | null>(null)
@@ -345,6 +353,13 @@ export default function TranscriptEditor({
       if (state.playTime !== previous.playTime) highlight(state.playTime)
     })
   }, [timedTokens])
+
+  // Turning vim off mid-command drops the pending keys and visual mode.
+  const [lastVimMotions, setLastVimMotions] = useState(vimMotions)
+  if (vimMotions !== lastVimMotions) {
+    setLastVimMotions(vimMotions)
+    if (!vimMotions) setVim(VIM_IDLE)
+  }
 
   useEffect(() => {
     const stopDragging = () => setDragging(false)
@@ -643,6 +658,70 @@ export default function TranscriptEditor({
         </button>
       </span>
     )
+  }
+
+  const navigableIndices = items.flatMap((item) => (item.kind === 'word' ? [item.idx] : []))
+
+  /** Route a key on a focused word through the vim grammar. Returns true when vim consumed it. */
+  const handleVimKey = (event: KeyboardEvent<HTMLElement>, idx: number): boolean => {
+    if (!vimMotions || correction || event.metaKey || event.altKey) return false
+    const anchor = vim.mode === 'visual' ? selAnchor : null
+    const result = vimKey(vim, event.key, { words, navigable: navigableIndices, focus: idx, anchor }, event.ctrlKey)
+    if (!result.handled) return false
+    event.preventDefault()
+    event.stopPropagation()
+    setVim(result.state)
+    const keptIds = (from: number, to: number) => words.slice(from, to + 1).filter((word) => !word.isRemoved).map((word) => word.id)
+    const cutIds = (from: number, to: number) => words.slice(from, to + 1).filter((word) => word.isRemoved).map((word) => word.id)
+    const focusIndex = (index: number) => {
+      const word = words[index]
+      if (!word) return
+      window.setTimeout(() => wordEls.current.get(word.id)?.focus({ preventScroll: false }), 0)
+    }
+    for (const command of result.commands) {
+      switch (command.type) {
+        case 'move':
+          if (result.state.mode === 'visual' && anchor !== null) setSelection(anchor, command.to)
+          else setSelection(command.to, command.to)
+          focusIndex(command.to)
+          break
+        case 'visual':
+          if (command.on) setSelection(idx, idx)
+          else setSelection(null, null)
+          break
+        case 'cut': {
+          const ids = keptIds(command.from, command.to)
+          if (ids.length) removeWords(ids)
+          const next = navigableIndices.find((index) => index > command.to) ?? navigableIndices[navigableIndices.length - 1]
+          if (next !== undefined) focusIndex(next)
+          break
+        }
+        case 'restore': {
+          const ids = cutIds(command.from, command.to)
+          if (ids.length) restoreWords(ids)
+          break
+        }
+        case 'reword': {
+          const ids = keptIds(command.from, command.to)
+          if (ids.length >= 2) beginPhraseCorrection(ids, words[command.from])
+          else if (ids.length === 1) beginCorrection(wordsById.get(ids[0])!)
+          break
+        }
+        case 'undo': undo(); break
+        case 'redo': redo(); break
+        case 'marker': {
+          const word = words[command.at]
+          if (word) addMarker(command.kind, undefined, { sourceTime: word.startTime })
+          break
+        }
+        case 'search':
+          setSearchOpen(true)
+          window.setTimeout(() => searchInputRef.current?.focus(), 0)
+          break
+        case 'shortenGap': shortenGapAtPlayhead(); break
+      }
+    }
+    return true
   }
 
   if (contextMenu?.target.kind === 'word') {
@@ -953,6 +1032,11 @@ export default function TranscriptEditor({
         <span className="font-semibold uppercase tracking-[0.14em] text-ink">Transcript</span>
         <span className="text-line-strong">/</span>
         <span className="hidden md:inline text-ink-muted">Click to seek · drag to select · double-click to correct · right-click for actions</span>
+        {vimMotions && (
+          <span className={`vim-badge is-${vim.mode}`} role="status" aria-live="polite" title="Vim motions are on. Turn them off in Settings.">
+            <span className="vim-badge-key">VIM</span> {vimStatus(vim)}
+          </span>
+        )}
         <div className="source-switch" role="group" aria-label="Original and edited audio comparison"><button disabled={status !== 'ready'} aria-pressed={audioPreviewMode === 'original'} onClick={() => setAudioPreviewMode('original')}>Source</button><button disabled={status !== 'ready'} aria-pressed={audioPreviewMode === 'edited'} onClick={() => setAudioPreviewMode('edited')}>Edited</button></div>
         {searchOpen ? (
           <div className="ml-auto flex items-center gap-1.5" role="search">
@@ -1481,6 +1565,7 @@ export default function TranscriptEditor({
                       word.id,
                     )}
                     onKeyDown={(event) => {
+                      if (handleVimKey(event, idx)) return
                       if (isContextMenuKey(event)) {
                         openKeyboardMenu(
                           event,
