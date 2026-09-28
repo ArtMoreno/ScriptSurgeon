@@ -130,6 +130,34 @@ export const CheckIcon = (props: IconProps) => (
   <Icon {...props}><path d="m5 12 4 4L19 6" /></Icon>
 )
 
+/**
+ * The product mark, drawn bold: a waveform under the knife. Sized by the
+ * `size` prop so it reads at 24 px in a header and 64 px on the home page.
+ */
+export const BrandMark = ({ size = 40, className, title }: { size?: number; className?: string; title?: string }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 64 64"
+    className={className}
+    role={title ? 'img' : undefined}
+    aria-hidden={title ? undefined : 'true'}
+  >
+    {title && <title>{title}</title>}
+    <rect x="2" y="2" width="60" height="60" rx="16" fill="#1c1d20" stroke="#34363a" strokeWidth="2" />
+    <g stroke="#f4eee5" strokeWidth="5" strokeLinecap="round">
+      <line x1="12" y1="30" x2="12" y2="34" />
+      <line x1="20" y1="24" x2="20" y2="40" />
+      <line x1="28" y1="18" x2="28" y2="46" />
+      <line x1="44" y1="21" x2="44" y2="43" />
+      <line x1="52" y1="27" x2="52" y2="37" />
+    </g>
+    <line x1="36" y1="10" x2="36" y2="54" stroke="#ee643f" strokeWidth="5" strokeLinecap="round" />
+    <circle cx="36" cy="32" r="5.5" fill="#ee643f" />
+    <line x1="42" y1="14" x2="42" y2="19" stroke="#3caaa2" strokeWidth="4" strokeLinecap="round" />
+  </svg>
+)
+
 export const EditIcon = (props: IconProps) => (
   <Icon {...props}><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10L4 20Z" /><path d="m13.5 7 3.5 3.5" /></Icon>
 )

@@ -9,7 +9,20 @@ export interface Word {
   gapAfter: number
   /** Optional word-level ASR probability when the local transcriber exposes it. */
   asrConfidence?: number
+  /**
+   * The transcript text this word carried before the editor reworded it.
+   * Adjacent words that share the same value were reworded together as one
+   * phrase; reverting restores that phrase over the same time span.
+   */
+  originalText?: string
 }
+
+/**
+ * Strict keeps the original retake passes only. Balanced adds the sentence
+ * restart pass, which also finds restarts longer than five words and takes
+ * separated by a spoken correction. Both stay review-only.
+ */
+export type RetakeSensitivity = 'strict' | 'balanced'
 
 export interface InsertClip {
   /** Stable edit identity. Re-recording changes clipId, not this ID. */
@@ -112,6 +125,8 @@ export interface ProjectState {
   retakeGroups?: RetakeGroupState[]
   cleanupKeepWordIds?: string[]
   cleanupKeepGapIds?: string[]
+  /** Which retake passes run for this project. Older files default to balanced. */
+  retakeSensitivity?: RetakeSensitivity
   /** Local metadata; never changes rendered audio. */
   markers?: Marker[]
   revision?: number

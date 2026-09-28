@@ -1,4 +1,6 @@
-import type { CleanupSummary, Word } from '../types'
+import type { CleanupSummary, RetakeSensitivity, Word } from '../types'
+
+export type { RetakeSensitivity }
 
 /**
  * Cleanup deliberately produces recommendations, not irreversible actions.
@@ -8,13 +10,31 @@ export const GAP_THRESHOLD = 0.8
 export const GAP_TARGET = 0.3
 export const RETAKE_PAUSE = 1.5
 
-const UNAMBIGUOUS_FILLERS = new Set(['um', 'uh', 'umm', 'uhh', 'er', 'erm'])
+const UNAMBIGUOUS_FILLERS = new Set(['um', 'uh', 'umm', 'uhh', 'er', 'erm', 'ah', 'hmm', 'mm', 'mmm'])
 const AMBIGUOUS_FILLERS = new Set(['like', 'so', 'basically', 'literally', 'actually'])
 const FILLER_PHRASES = ['you know', 'i mean']
 const RETAKE_MARKERS = ['take two', 'take 2', 'let me redo that', 'start over', 'one more time', 'scratch that', 'sorry']
+/**
+ * Spoken phrases that end an abandoned attempt. The balanced restart pass
+ * strips these from the tail of an earlier attempt before aligning it, and
+ * removes them together with that attempt. "again" is only ever a trailing
+ * marker here; on its own it proves nothing.
+ */
+const TRAILING_MARKERS = [...RETAKE_MARKERS, 'let me try that again', 'let me try again', 'again']
+/** Words skipped for alignment only, so "Um, so the first…" still matches "The first…". */
+const LEADING_FILLERS = new Set(['um', 'uh', 'umm', 'uhh', 'er', 'erm', 'ah', 'hmm', 'so', 'well', 'okay', 'ok', 'and'])
+/** A sentence-end pause at least this long is offered for shortening at low confidence. */
+export const SENTENCE_GAP_THRESHOLD = 2.0
+/** Room tone kept when a sentence-end pause is shortened; a beat, not a cut. */
+export const SENTENCE_GAP_TARGET_MS = 600
 
 export type CleanupKind = 'fillers' | 'gaps' | 'retakes'
 export type CleanupConfidence = 'high' | 'medium' | 'low'
+export const DEFAULT_RETAKE_SENSITIVITY: RetakeSensitivity = 'balanced'
+
+export function normalizeRetakeSensitivity(value: unknown): RetakeSensitivity {
+  return value === 'strict' ? 'strict' : DEFAULT_RETAKE_SENSITIVITY
+}
 
 /**
  * One contiguous spoken attempt within a retake recommendation.  Candidate
@@ -84,6 +104,8 @@ export interface CleanupOptions {
    * make an acoustic speech/no-speech claim.
    */
   speechProbabilityById?: Record<string, number>
+  /** Which retake passes run. Defaults to balanced. */
+  retakeSensitivity?: RetakeSensitivity
 }
 
 export interface CleanupFeedback {
@@ -404,6 +426,10 @@ function candidateConfidence(candidate: RetakeCandidate, options: CleanupOptions
   return values.length ? values.reduce((total, value) => total + value, 0) / values.length : undefined
 }
 
+function candidateFillerCount(candidate: RetakeCandidate): number {
+  return candidate.transcript.split(/\s+/).map(norm).filter((token) => UNAMBIGUOUS_FILLERS.has(token)).length
+}
+
 function candidateHasRestartMarker(candidate: RetakeCandidate): boolean {
   const normalized = candidate.transcript.split(/\s+/).map(norm).join(' ')
   return RETAKE_MARKERS.some((marker) => normalized.includes(marker))
@@ -417,14 +443,18 @@ function recommendRetakeCandidate(
   const scored = candidates.map((candidate, index) => {
     const complete = sentenceComplete(candidate)
     const confidence = candidateConfidence(candidate, options)
-    // Completion matters most. Length and optional ASR confidence break ties;
-    // recency is deliberately a tiny final tie-breaker, never the rule.
+    const fillers = candidateFillerCount(candidate)
+    // Completion matters most. A cleaner delivery (fewer fillers, no spoken
+    // correction) and fuller wording break ties; a later attempt is
+    // preferred only when everything else is equal, because a speaker who
+    // restarts usually meant the restart.
     const score = (complete ? 2 : 0)
-      + (candidate.wordIds.length / longest)
+      + (candidate.wordIds.length / longest) * 0.5
       + (confidence === undefined ? 0 : confidence * 0.25)
+      - Math.min(1, fillers * 0.25)
       - (candidateHasRestartMarker(candidate) ? 0.5 : 0)
-      + index * 0.01
-    return { candidate, complete, confidence, score, index }
+      + index * 0.05
+    return { candidate, complete, confidence, fillers, score, index }
   })
   const winner = [...scored].sort((left, right) => right.score - left.score || right.index - left.index)[0]
   const runnerUp = [...scored]
@@ -435,6 +465,18 @@ function recommendRetakeCandidate(
     return {
       candidate: winner.candidate,
       reason: `${winner.candidate.label} has a complete sentence ending; ${runnerUp.candidate.label} does not.`,
+    }
+  }
+  if (runnerUp && winner.fillers < runnerUp.fillers) {
+    return {
+      candidate: winner.candidate,
+      reason: `${winner.candidate.label} is the cleaner delivery; ${runnerUp.candidate.label} has ${runnerUp.fillers} filler word${runnerUp.fillers === 1 ? '' : 's'}.`,
+    }
+  }
+  if (runnerUp && !candidateHasRestartMarker(winner.candidate) && candidateHasRestartMarker(runnerUp.candidate)) {
+    return {
+      candidate: winner.candidate,
+      reason: `${runnerUp.candidate.label} ends in a spoken correction; ${winner.candidate.label} is the take that followed it.`,
     }
   }
   if (runnerUp && winner.candidate.wordIds.length > runnerUp.candidate.wordIds.length) {
@@ -451,7 +493,7 @@ function recommendRetakeCandidate(
   }
   return {
     candidate: winner.candidate,
-    reason: 'The attempts are equally complete; the later take is only a tie-breaker.',
+    reason: 'The attempts are equally complete; the later take is preferred because the speaker chose to restart.',
   }
 }
 
@@ -673,19 +715,33 @@ export function detectGaps(
     if (keepIds.has(word.id)) { diagnostics.skipped.kept += 1; continue }
     const speakerChanged = crossesSpeakerBoundary([word, next], speakers)
     const boundary = gapBoundaryReason(word, next, speakerChanged)
-    if (!boundary) {
+    // A long pause after a full stop is the pause editors tighten most, but
+    // it is also where a deliberate beat lives. Offer it only when it is
+    // clearly long, at low confidence, and keep a longer beat than usual.
+    const sentenceEnd = !boundary && !speakerChanged && gap >= SENTENCE_GAP_THRESHOLD
+    if (!boundary && !sentenceEnd) {
       if (speakerChanged) diagnostics.skipped.speakerChange += 1
       else diagnostics.skipped.sentenceBoundary += 1
       continue
     }
-    // Slow, careful speech can legitimately contain longer word gaps. With no
-    // acoustic model available, suppress these rather than making a weak guess.
-    const cadenceFloor = Math.max(threshold, localWordDuration(words, index) * 4)
-    if (gap <= cadenceFloor) { diagnostics.skipped.slowDelivery += 1; continue }
-    const confidence = boundary.confidence === 'medium' && gap >= Math.max(threshold + 0.25, cadenceFloor + 0.15)
-      ? 'high'
-      : boundary.confidence
-    const retained = Math.min(gap, target)
+    let confidence: CleanupConfidence
+    let reason: string
+    let retained: number
+    if (sentenceEnd) {
+      confidence = 'low'
+      reason = `Long pause after a sentence; keeps a ${SENTENCE_GAP_TARGET_MS}ms beat`
+      retained = Math.min(gap, Math.max(target, SENTENCE_GAP_TARGET_MS / 1000))
+    } else {
+      // Slow, careful speech can legitimately contain longer word gaps. With no
+      // acoustic model available, suppress these rather than making a weak guess.
+      const cadenceFloor = Math.max(threshold, localWordDuration(words, index) * 4)
+      if (gap <= cadenceFloor) { diagnostics.skipped.slowDelivery += 1; continue }
+      confidence = boundary!.confidence === 'medium' && gap >= Math.max(threshold + 0.25, cadenceFloor + 0.15)
+        ? 'high'
+        : boundary!.confidence
+      reason = boundary!.reason
+      retained = Math.min(gap, target)
+    }
     const previewStart = clampTime(word.endTime) + retained / 2
     const previewEnd = Math.max(previewStart, clampTime(next.startTime) - retained / 2)
     proposals.push({
@@ -698,7 +754,7 @@ export function detectGaps(
       previewStart,
       previewEnd,
       confidence,
-      reason: boundary.reason,
+      reason,
       context: contextFor(words, word.id, next.id),
       originalGapMs: Math.round(gap * 1000),
       targetGapMs: Math.round(retained * 1000),
@@ -774,8 +830,13 @@ interface RetakeAlignment {
  * is transcription formatting, not reliable evidence of speaker intent.
  */
 function retakeAlignment(left: Word[], right: Word[]): RetakeAlignment {
-  const leftTokens = left.map((word) => norm(word.text)).filter(Boolean)
-  const rightTokens = right.map((word) => norm(word.text)).filter(Boolean)
+  return alignTokens(
+    left.map((word) => norm(word.text)).filter(Boolean),
+    right.map((word) => norm(word.text)).filter(Boolean),
+  )
+}
+
+function alignTokens(leftTokens: string[], rightTokens: string[]): RetakeAlignment {
   const shortestLength = Math.min(leftTokens.length, rightTokens.length)
   if (!shortestLength) return { shared: 0, prefix: 0, suffix: 0, longestRun: 0, shortestLength: 0 }
 
@@ -861,6 +922,192 @@ function isMarkerBackedRevision(before: Word[], after: Word[]): boolean {
     && (alignment.prefix >= 2 || alignment.suffix >= 2 || alignment.longestRun >= 3)
 }
 
+function markerParts(): string[][] {
+  return TRAILING_MARKERS.map((marker) => marker.split(' ')).sort((left, right) => right.length - left.length)
+}
+
+/** How many normalized tokens at the end of `tokens` are spoken correction markers. */
+function trailingMarkerLength(tokens: string[]): number {
+  let length = 0
+  let remaining = tokens
+  for (;;) {
+    const match = markerParts().find((parts) => parts.length <= remaining.length
+      && parts.every((part, index) => remaining[remaining.length - parts.length + index] === part))
+    if (!match) return length
+    length += match.length
+    remaining = remaining.slice(0, remaining.length - match.length)
+  }
+}
+
+function markerAt(tokens: string[], index: number): string | null {
+  const match = markerParts().find((parts) => parts.every((part, offset) => tokens[index + offset] === part))
+  return match ? match.join(' ') : null
+}
+
+/**
+ * A restart can only begin where a listener would hear a new phrase: after a
+ * full stop, a comma, a perceptible pause, or a spoken correction marker.
+ */
+function startsPhrase(kept: Word[], normalized: string[], index: number): boolean {
+  if (index === 0) return true
+  const previous = kept[index - 1]
+  if (hasSentenceBoundary([previous]) || /,$/.test(previous.text.trim())) return true
+  if (clampTime(kept[index].startTime) - clampTime(previous.endTime) >= 0.16) return true
+  return trailingMarkerLength(normalized.slice(Math.max(0, index - 6), index)) > 0
+}
+
+function skipLeadingFillers(tokens: string[]): number {
+  let lead = 0
+  while (lead < tokens.length - 2 && LEADING_FILLERS.has(tokens[lead])) lead += 1
+  return lead
+}
+
+/** The shortest prefix of `later` that still carries the whole alignment. */
+function alignedPortion(earlier: string[], later: string[], shared: number): number {
+  for (let length = 1; length <= later.length; length += 1) {
+    if (alignTokens(earlier, later.slice(0, length)).shared >= shared) return length
+  }
+  return later.length
+}
+
+type RestartShape = 'marker' | 'immediate' | 'paused'
+
+/**
+ * The balanced pass. Every phrase start is tried as the beginning of a later
+ * take; every earlier phrase start within reach is tried as the abandoned
+ * attempt. An attempt may end with a spoken correction ("sorry, let me redo
+ * that"), which is stripped for alignment and removed with the attempt. The
+ * accepted shapes are deliberately narrow: an immediate restart, a paused
+ * restart of a complete sentence, a paused partial restart, or a marker.
+ *
+ * Evidence stays lexical. Nothing here is auto-applied; the reviewer still
+ * chooses the take to keep.
+ */
+function detectSentenceRestarts(
+  words: Word[],
+  kept: Word[],
+  normalized: string[],
+  keepIds: Set<string>,
+  blocked: Set<string>,
+  speakers: Map<string, string>,
+  options: CleanupOptions,
+  reject: (reason: string) => void,
+  countWindow: () => void,
+): CleanupProposal[] {
+  const proposals: CleanupProposal[] = []
+  const earlierCovered = new Set<string>()
+
+  for (let later = 1; later < kept.length; later += 1) {
+    if (!startsPhrase(kept, normalized, later) || markerAt(normalized, later)) continue
+    let end = later
+    while (end < kept.length - 1 && end - later < 39
+      && !hasSentenceBoundary([kept[end]])
+      && clampTime(kept[end + 1].startTime) - clampTime(kept[end].endTime) < RETAKE_PAUSE) end += 1
+    const laterTake = kept.slice(later, end + 1)
+    const laterTokens = normalized.slice(later, end + 1)
+    const laterLead = skipLeadingFillers(laterTokens)
+    const laterAligned = laterTokens.slice(laterLead).filter(Boolean)
+    const laterVocabulary = new Set(laterAligned)
+    const gapBetween = clampTime(kept[later].startTime) - clampTime(kept[later - 1].endTime)
+    if (gapBetween > 5) continue
+
+    let best: {
+      earlierIds: string[]
+      laterIds: string[]
+      shape: RestartShape
+      marker: string
+      shared: number
+      coverage: number
+      exact: boolean
+      coreLength: number
+    } | null = null
+
+    for (let earlier = later - 2; earlier >= 0 && later - earlier <= 48; earlier -= 1) {
+      if (clampTime(kept[later].startTime) - clampTime(kept[earlier].startTime) > 60) break
+      if (!startsPhrase(kept, normalized, earlier)) continue
+      const attempt = kept.slice(earlier, later)
+      const attemptTokens = normalized.slice(earlier, later)
+      const markerLength = trailingMarkerLength(attemptTokens)
+      const core = attempt.slice(0, attempt.length - markerLength)
+      if (core.length < 2) continue
+      if (core.length > 40) break
+      // A full stop inside the attempt means it was two sentences, and every
+      // longer attempt from here would contain the same full stop.
+      if (hasSentenceBoundary(core.slice(0, -1))) break
+      const coreTokens = attemptTokens.slice(0, core.length)
+      const aligned = coreTokens.slice(skipLeadingFillers(coreTokens)).filter(Boolean)
+      if (aligned.length < 2) continue
+      // Cheap gate before the quadratic alignment: two shared words minimum.
+      let overlap = 0
+      for (const token of aligned) if (laterVocabulary.has(token)) overlap += 1
+      if (overlap < 2) continue
+      countWindow()
+      if (hasQuoteBoundary([...attempt, ...laterTake]) || crossesSpeakerBoundary([...attempt, ...laterTake], speakers)) {
+        reject('quoted-content-or-speaker-boundary')
+        continue
+      }
+      const corePause = markerLength
+        ? clampTime(kept[earlier + core.length].startTime) - clampTime(core[core.length - 1].endTime)
+        : gapBetween
+      if (corePause > 5) { reject('outside-restart-window'); continue }
+
+      const alignment = alignTokens(aligned, laterAligned)
+      const coverage = alignment.shared / aligned.length
+      const complete = hasSentenceBoundary([core[core.length - 1]])
+      const exact = alignment.shared === aligned.length && aligned.length === laterAligned.length
+      let shape: RestartShape | null = null
+      if (markerLength) {
+        if (alignment.shared >= 2 && coverage >= 0.6 && (alignment.prefix >= 2 || alignment.longestRun >= 2)) shape = 'marker'
+      } else if (gapBetween < 0.65 && !complete) {
+        if (aligned.length >= 3 && coverage >= 0.66
+          && (alignment.prefix >= 3 || alignment.suffix >= 2 || alignment.longestRun >= 3 || exact)) shape = 'immediate'
+      } else if (gapBetween < 0.65) {
+        if (exact && aligned.length >= 3) shape = 'immediate'
+      } else if (complete) {
+        // Keeps "We will win. We will win." and "Item one is ready. Item two
+        // is ready." out: a repeated short sentence or a changed middle word
+        // is rhetoric or structure, not a retake.
+        if (aligned.length >= 4 && alignment.shared >= 3 && coverage >= 0.6 && (alignment.prefix >= 3 || alignment.longestRun >= 3)) shape = 'paused'
+      } else if (aligned.length >= 3 && alignment.shared >= 3 && coverage >= 0.8 && alignment.prefix >= 3) {
+        shape = 'paused'
+      }
+      if (!shape) { reject('insufficient-restart-alignment'); continue }
+
+      // An immediate partial restart competes only for the repeated words;
+      // the continuation of the later take stays whichever delivery is kept.
+      const laterIds = shape === 'immediate' && !complete
+        ? laterTake.slice(0, laterLead + alignedPortion(aligned, laterAligned, alignment.shared)).map((word) => word.id)
+        : laterTake.map((word) => word.id)
+      const earlierIds = attempt.map((word) => word.id)
+      if ([...earlierIds, ...laterIds].some((id) => keepIds.has(id) || blocked.has(id) || earlierCovered.has(id))) {
+        reject('kept-or-overlapping')
+        continue
+      }
+      const marker = markerLength ? attemptTokens.slice(attemptTokens.length - markerLength).join(' ') : ''
+      const better = !best
+        || alignment.shared > best.shared
+        || (alignment.shared === best.shared && coverage >= best.coverage)
+      if (better) {
+        best = { earlierIds, laterIds, shape, marker, shared: alignment.shared, coverage, exact, coreLength: core.length }
+      }
+    }
+
+    if (!best) continue
+    const confidence: CleanupConfidence = best.exact && gapBetween >= 1.8 ? 'high' : 'medium'
+    const reason = best.shape === 'marker'
+      ? `Restart after “${best.marker}”`
+      : best.shape === 'immediate'
+        ? `Immediate ${best.coreLength}-word restart`
+        : `Restart after a ${gapBetween.toFixed(1)}s pause`
+    const proposal = proposalForWords('retakes', words, best.earlierIds, confidence, reason, best.laterIds, options)
+    if (proposal) {
+      proposals.push(proposal)
+      best.earlierIds.forEach((id) => earlierCovered.add(id))
+    }
+  }
+  return proposals
+}
+
 /**
  * Nearby lexical repeats are review suggestions, never proof of intent.
  * Exact rapid restarts and strongly aligned paused attempts are eligible;
@@ -942,6 +1189,18 @@ export function detectRetakes(
     if (!ids.some(id => keepIds.has(id))) clauseProposals.push(proposal)
   }
 
+  // The balanced pass runs before the legacy windows so a long or
+  // marker-separated restart is claimed whole rather than in fragments.
+  if ((options.retakeSensitivity ?? DEFAULT_RETAKE_SENSITIVITY) === 'balanced') {
+    const restarts = detectSentenceRestarts(
+      words, kept, normalized, keepIds, clauseWords, speakers, options, reject, () => { candidateWindows += 1 },
+    )
+    for (const proposal of restarts) {
+      proposals.push(proposal)
+      proposal.retakeGroup?.candidates.forEach((candidate) => candidate.wordIds.forEach((id) => covered.add(id)))
+    }
+  }
+
   // ponytail: bounded to 32 words per attempt; longer passages need an
   // alignment strategy measured against real editorial ground truth.
   for (let boundary = 2; boundary < kept.length - 3; boundary += 1) {
@@ -964,7 +1223,7 @@ export function detectRetakes(
     const after = kept.slice(boundary + 1, last + 1)
     if (Math.max(before.length, after.length) <= 8) continue
     const attempts = [...before, ...after]
-    if (attempts.some(w => keepIds.has(w.id)) || hasQuoteBoundary(attempts)
+    if (attempts.some(w => keepIds.has(w.id) || covered.has(w.id)) || hasQuoteBoundary(attempts)
       || crossesSpeakerBoundary(attempts, speakers)) continue
     candidateWindows += 1
     const alignment = retakeAlignment(before, after)

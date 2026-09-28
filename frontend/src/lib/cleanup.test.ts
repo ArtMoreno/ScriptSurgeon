@@ -165,6 +165,13 @@ test('cleanup benchmark is exact, conservative, and input-immutable', () => {
       assert.deepEqual(protectedResult.proposals, [], `${fixture.id}: explicit keep suppresses the same suggestion`)
     }
 
+    // A negative retake fixture must stay empty in both sensitivities: the
+    // balanced pass may find more, never something strict rejects on safety.
+    if (fixture.kind === 'retakes' && fixture.expectedProposalKeys.length === 0) {
+      const strict = runCleanup(fixture.kind, words, [], [], [], [], { ...fixture.options, retakeSensitivity: 'strict' })
+      assert.deepEqual(strict.proposals, [], `${fixture.id}: strict stays empty`)
+    }
+
     if (fixture.retakeGroundTruth) {
       assert.equal(result.proposals.length, 1, `${fixture.id}: one merged alternate-take group`)
       const proposal = result.proposals[0]
@@ -505,7 +512,11 @@ test('retake alignment recognizes exact, revised, and sorry-marked restarts with
   const revision = CLEANUP_BENCHMARK.find((candidate) => candidate.id === 'punctuated_revision_after_pause')!
   const revisionResult = runCleanup('retakes', materializeWords(revision.words), [], [])
   assert.deepEqual(revisionResult.proposals[0].wordIds, ['pr1', 'pr2', 'pr3', 'pr4', 'pr5'])
-  assert.match(revisionResult.proposals[0].reason, /aligns with a following retake/)
+  // The balanced pass claims this revision first; strict still reports the
+  // legacy alignment wording.
+  assert.match(revisionResult.proposals[0].reason, /Restart after a 1\.9s pause/)
+  const strictRevision = runCleanup('retakes', materializeWords(revision.words), [], [], [], [], { retakeSensitivity: 'strict' })
+  assert.match(strictRevision.proposals[0].reason, /aligns with a following retake/)
   assert.deepEqual(revisionResult.selectedProposalIds, [])
 
   const marker = CLEANUP_BENCHMARK.find((candidate) => candidate.id === 'sorry_marker_retake')!

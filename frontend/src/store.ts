@@ -13,12 +13,21 @@ import type {
   ProjectMeta,
   ProjectState,
   RetakeGroupState,
+  RetakeSensitivity,
 } from './types.ts'
 import { formatTranscript, transcriptTokens } from './lib/subtitles.ts'
 import { player } from './lib/player.ts'
 import { api } from './lib/api.ts'
-import { applyCleanupProposals, runCleanup, selectRetakeCandidate, withCleanupSelection } from './lib/cleanup.ts'
+import {
+  DEFAULT_RETAKE_SENSITIVITY,
+  applyCleanupProposals,
+  normalizeRetakeSensitivity,
+  runCleanup,
+  selectRetakeCandidate,
+  withCleanupSelection,
+} from './lib/cleanup.ts'
 import type { CleanupFeedback, CleanupKind, CleanupResult } from './lib/cleanup.ts'
+import { revertReword, rewordSpan, rewordedRun, type RewordResult } from './lib/reword.ts'
 import {
   buildTimeline,
   editedDuration,
@@ -77,6 +86,8 @@ interface Store {
   retakeGroups: RetakeGroupState[]
   cleanupKeepWordIds: string[]
   cleanupKeepGapIds: string[]
+  /** Project-level detector choice. Not part of undo history. */
+  retakeSensitivity: RetakeSensitivity
   studioSound: boolean
   noiseReduction: NoiseLevel
   normalizeLoudness: boolean
@@ -124,6 +135,8 @@ interface Store {
   openProject: (id: string) => Promise<void>
   retryTranscription: () => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  /** Rename a listed project; the open project's title follows. Resolves to the saved name. */
+  renameProject: (id: string, name: string) => Promise<string | null>
   closeProject: () => Promise<void>
   flushSave: () => Promise<void>
   exportProject: (format?: ExportFormat, range?: { start: number; end: number } | null, suffix?: string) => Promise<void>
@@ -170,6 +183,11 @@ interface Store {
   auditionCleanupProposal: (proposalId: string) => void
   auditionRetakeCandidate: (proposalId: string, candidateId: string) => void
   correctWord: (id: string, text: string) => void
+  /** Reword a contiguous run of kept words as one phrase; audio is untouched. */
+  correctWords: (ids: string[], text: string) => void
+  /** Put back the original transcript text of a reworded phrase. */
+  revertWordText: (id: string) => void
+  setRetakeSensitivity: (sensitivity: RetakeSensitivity) => void
   addRecording: (file: File, text: string, afterWordId: string | null, sourceTime?: number) => Promise<void>
   replaceRecording: (insertId: string, file: File, text?: string) => Promise<void>
   correctInsertText: (insertId: string, text: string) => void
@@ -304,12 +322,13 @@ function markerAnchorAtPlayhead(state: Pick<Store, 'audioPreviewMode' | 'playTim
   return markerAnchorAtEditedTime(model, state.playTime)
 }
 
-function cleanupOptionsFor(state: Pick<Store, 'speakerByWord' | 'words' | 'gapPacing'>) {
+function cleanupOptionsFor(state: Pick<Store, 'speakerByWord' | 'words' | 'gapPacing' | 'retakeSensitivity'>) {
   return {
     speakerByWord: state.speakerByWord,
     wordConfidenceById: wordConfidenceById(state.words),
     gapThresholdMs: state.gapPacing.detectionThresholdMs,
     gapTargetMs: state.gapPacing.targetGapMs,
+    retakeSensitivity: state.retakeSensitivity,
   }
 }
 
@@ -393,6 +412,7 @@ export const useStore = create<Store>((set, get) => {
       retakeGroups: state.retakeGroups,
       cleanupKeepWordIds: state.cleanupKeepWordIds,
       cleanupKeepGapIds: state.cleanupKeepGapIds,
+      retakeSensitivity: state.retakeSensitivity,
       markers: state.markers,
     }
   }
@@ -528,6 +548,56 @@ export const useStore = create<Store>((set, get) => {
     queuePersistence(renderAudio)
   }
 
+  /**
+   * Land a reword or its revert. Text never changes audio, but a phrase that
+   * changed word count loses its interior gaps, so any pause edits that lived
+   * there are dropped and the preview is re-rendered only in that case.
+   */
+  function commitReword(result: RewordResult, spanIds: string[]) {
+    const current = get()
+    const removed = new Set(result.removedIds)
+    const spanSet = new Set(spanIds)
+    const oldLast = spanIds[spanIds.length - 1]
+    const countChanged = removed.size > 0 || result.words.length !== current.words.length
+    const gapEdits = current.gapEdits
+      .filter((edit) => edit.afterWordId === oldLast
+        || (!removed.has(edit.afterWordId) && !(countChanged && spanSet.has(edit.afterWordId))))
+      .map((edit) => (edit.afterWordId === oldLast ? { ...edit, afterWordId: result.lastId } : edit))
+    const renderAudio = gapEdits.length !== current.gapEdits.length
+    applyEdit((state) => ({
+      words: result.words,
+      gapEdits,
+      shortenedGapIds: shortenedIdsFor(gapEdits),
+      collapsedRetakes: state.collapsedRetakes
+        .map((group) => group.filter((id) => !removed.has(id)))
+        .filter((group) => group.length > 0),
+      // Rewording inside the kept take keeps the group; its candidate just
+      // follows the new word IDs. Any other overlap dissolves the group.
+      retakeGroups: state.retakeGroups.flatMap((group) => {
+        const touched = group.candidates.findIndex((candidate) => candidate.some((id) => spanSet.has(id)))
+        if (touched < 0) return [group]
+        if (touched !== group.selectedKeepIndex) return []
+        const candidate = group.candidates[touched]
+        if (!spanIds.every((id) => candidate.includes(id))) return []
+        const first = result.words.findIndex((word) => word.id === result.firstId)
+        const last = result.words.findIndex((word) => word.id === result.lastId)
+        const replacement = result.words.slice(first, last + 1).map((word) => word.id)
+        const start = candidate.indexOf(spanIds[0])
+        const next = [...candidate.slice(0, start), ...replacement, ...candidate.slice(start + spanIds.length)]
+        return [{ ...group, candidates: group.candidates.map((item, index) => (index === touched ? next : item)) }]
+      }),
+      cleanupKeepWordIds: state.cleanupKeepWordIds.filter((id) => !removed.has(id)),
+      speakerByWord: Object.fromEntries(Object.entries(state.speakerByWord).filter(([id]) => !removed.has(id))),
+      insertClips: state.insertClips.map((clip) => (
+        clip.afterWordId && (removed.has(clip.afterWordId) || (countChanged && spanSet.has(clip.afterWordId)))
+          ? { ...clip, afterWordId: result.lastId }
+          : clip
+      )),
+      selAnchor: null,
+      selFocus: null,
+    }), renderAudio)
+  }
+
   function loadReadyProject(
     projectId: string,
     projectMeta: ProjectMeta,
@@ -558,6 +628,7 @@ export const useStore = create<Store>((set, get) => {
       retakeGroups: state.retakeGroups || [],
       cleanupKeepWordIds: state.cleanupKeepWordIds || [],
       cleanupKeepGapIds: state.cleanupKeepGapIds || [],
+      retakeSensitivity: normalizeRetakeSensitivity(state.retakeSensitivity),
       studioSound: state.studioSound || false,
       noiseReduction: state.noiseReduction || 'off',
       // Loudness used to live inside Studio sound; keep older projects sounding the same.
@@ -693,6 +764,7 @@ export const useStore = create<Store>((set, get) => {
       shortenedGapIds: [],
       gapEdits: [],
       gapPacing: { ...DEFAULT_GAP_PACING },
+      retakeSensitivity: DEFAULT_RETAKE_SENSITIVITY,
       collapsedRetakes: [],
       retakeGroups: [],
       cleanupKeepWordIds: [],
@@ -784,6 +856,7 @@ export const useStore = create<Store>((set, get) => {
     shortenedGapIds: [],
     gapEdits: [],
     gapPacing: { ...DEFAULT_GAP_PACING },
+    retakeSensitivity: DEFAULT_RETAKE_SENSITIVITY,
     collapsedRetakes: [],
     retakeGroups: [],
     cleanupKeepWordIds: [],
@@ -855,6 +928,7 @@ export const useStore = create<Store>((set, get) => {
         shortenedGapIds: [],
         gapEdits: [],
         gapPacing: { ...DEFAULT_GAP_PACING },
+        retakeSensitivity: DEFAULT_RETAKE_SENSITIVITY,
         collapsedRetakes: [],
         retakeGroups: [],
         cleanupKeepWordIds: [],
@@ -963,6 +1037,24 @@ export const useStore = create<Store>((set, get) => {
       }
     },
 
+    renameProject: async (id, name) => {
+      const trimmed = normalizeProjectName(name)
+      const listed = get().projects.find((project) => project.id === id)
+      if (!trimmed || !listed || listed.name === trimmed) return listed?.name ?? null
+      try {
+        const result = await api.renameProject(id, trimmed)
+        set({
+          projects: get().projects.map((project) => (project.id === id ? { ...project, name: result.name } : project)),
+          ...(get().projectId === id ? { projectName: result.name } : {}),
+          operationError: '',
+        })
+        return result.name
+      } catch (error) {
+        if (!isAbort(error)) set({ operationError: `The project could not be renamed. ${errorText(error, 'Try again.')}` })
+        return null
+      }
+    },
+
     deleteProject: async (id) => {
       try {
         await api.deleteProject(id)
@@ -981,6 +1073,7 @@ export const useStore = create<Store>((set, get) => {
             shortenedGapIds: [],
             gapEdits: [],
             gapPacing: { ...DEFAULT_GAP_PACING },
+            retakeSensitivity: DEFAULT_RETAKE_SENSITIVITY,
             collapsedRetakes: [],
             retakeGroups: [],
             cleanupKeepWordIds: [],
@@ -1029,6 +1122,7 @@ export const useStore = create<Store>((set, get) => {
         shortenedGapIds: [],
         gapEdits: [],
         gapPacing: { ...DEFAULT_GAP_PACING },
+        retakeSensitivity: DEFAULT_RETAKE_SENSITIVITY,
         collapsedRetakes: [],
         retakeGroups: [],
         cleanupKeepWordIds: [],
@@ -1829,18 +1923,29 @@ export const useStore = create<Store>((set, get) => {
 
     cancelCleanup: () => set({ cleanupPreview: null, cleanupWorkbenchOpen: false, focusedCleanupProposalId: null }),
 
-    correctWord: (id, text) => {
-      const correction = text.trim().slice(0, 500)
-      if (!correction) return
-      const existing = get().words.find((word) => word.id === id)
-      if (!existing || existing.text === correction) return
-      const retakeIds = new Set(get().collapsedRetakes.flat())
-      applyEdit((state) => ({
-        words: state.words.map((word) => (word.id === id
-          ? { ...word, text: correction, isFiller: false, isRetake: retakeIds.has(word.id) }
-          : word)),
-        retakeGroups: state.retakeGroups.filter((group) => !group.candidates.some((candidate) => candidate.includes(id))),
-      }), false)
+    correctWord: (id, text) => get().correctWords([id], text),
+
+    correctWords: (ids, text) => {
+      const spanIds = [...new Set(ids)]
+      const result = rewordSpan(get().words, spanIds, text)
+      if (result) commitReword(result, spanIds)
+    },
+
+    revertWordText: (id) => {
+      const state = get()
+      const spanIds = rewordedRun(state.words, id).map((word) => word.id)
+      const result = revertReword(state.words, id)
+      if (result) commitReword(result, spanIds)
+    },
+
+    setRetakeSensitivity: (sensitivity) => {
+      const next = normalizeRetakeSensitivity(sensitivity)
+      if (next === get().retakeSensitivity || !get().projectId) return
+      // Persisting clears any open preview, so remember whether to rerun it.
+      const reopen = get().cleanupWorkbenchOpen && get().cleanupPreview?.kind === 'retakes'
+      set({ retakeSensitivity: next })
+      queuePersistence(false)
+      if (reopen) get().previewCleanup('retakes')
     },
 
     addRecording: async (file, text, afterWordId, requestedSourceTime) => {

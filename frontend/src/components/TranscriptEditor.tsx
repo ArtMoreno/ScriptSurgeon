@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { editedGaps, editedInsertTimes, editedWordTimes } from '../lib/timeline'
 import { gapTargetsFromEdits } from '../lib/gapPacing'
 import { requestSeek } from '../lib/seekBus'
+import { player } from '../lib/player'
 import { primaryModifier } from '../lib/platform'
 import type { InsertClip, Word } from '../types'
 import { findMatches, stepMatch } from '../lib/transcriptSearch'
@@ -13,6 +14,8 @@ type Item =
   | { kind: 'word'; word: Word; idx: number }
   | { kind: 'insert'; clip: InsertClip }
   | { kind: 'retakePill'; retake: RetakePill }
+  | { kind: 'takeChip'; take: ReviewTake; idx: number }
+  | { kind: 'takeChooser'; proposalId: string }
   | { kind: 'gapMarker'; wordId: string; shortened: boolean; proposed: boolean; gap: number; targetGapMs?: number }
 
 interface RetakePill {
@@ -20,13 +23,24 @@ interface RetakePill {
   groupId?: string
   candidateCount?: number
   selectedKeepIndex?: number
+  /** Words of the kept take, when the group is durable. */
+  keptCount?: number
 }
 
-interface Correction {
-  kind: 'word' | 'insert'
-  id: string
-  text: string
+/** A word's place inside a retake group that is being reviewed. */
+interface ReviewTake {
+  proposalId: string
+  candidateId: string
+  label: string
+  index: number
+  first: boolean
+  lastOfGroup: boolean
+  recommended: boolean
 }
+
+type Correction =
+  | { kind: 'word' | 'insert'; id: string; text: string }
+  | { kind: 'phrase'; ids: string[]; text: string; original: string }
 
 type MenuTarget =
   | { kind: 'word'; wordId: string; idx: number }
@@ -82,6 +96,14 @@ export default function TranscriptEditor({
   const keepOriginalGaps = useStore((state) => state.keepOriginalGaps)
   const setGapTarget = useStore((state) => state.setGapTarget)
   const correctWord = useStore((state) => state.correctWord)
+  const correctWords = useStore((state) => state.correctWords)
+  const revertWordText = useStore((state) => state.revertWordText)
+  const selectRetakeCandidate = useStore((state) => state.selectRetakeCandidate)
+  const ignoreCleanupProposal = useStore((state) => state.ignoreCleanupProposal)
+  const auditionCleanupProposal = useStore((state) => state.auditionCleanupProposal)
+  const auditionRetakeCandidate = useStore((state) => state.auditionRetakeCandidate)
+  const focusedCleanupProposalId = useStore((state) => state.focusedCleanupProposalId)
+  const waveformReady = useStore((state) => state.waveformReady)
   const correctInsertText = useStore((state) => state.correctInsertText)
   const removeInsert = useStore((state) => state.removeInsert)
   const restoreInsert = useStore((state) => state.restoreInsert)
@@ -106,6 +128,9 @@ export default function TranscriptEditor({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const newSpeakerInputRef = useRef<HTMLInputElement>(null)
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null)
+  // A durable retake group whose cut words are shown struck through in place.
+  const [revealedGroup, setRevealedGroup] = useState<string | null>(null)
+  const seekTimer = useRef<number | null>(null)
   const cancelCorrection = useRef(false)
   const wordEls = useRef(new Map<string, HTMLElement>())
   const insertEls = useRef(new Map<string, HTMLElement>())
@@ -144,6 +169,7 @@ export default function TranscriptEditor({
         groupId: retake.id,
         candidateCount: retake.candidates.length,
         selectedKeepIndex: retake.selectedKeepIndex,
+        keptCount: retake.candidates[retake.selectedKeepIndex]?.length ?? 0,
       }
       removed.forEach((id) => groups.set(id, pill))
     })
@@ -156,8 +182,66 @@ export default function TranscriptEditor({
     return groups
   }, [cleanupPreview])
 
+  // While a retake review is open, every candidate word knows its take so the
+  // transcript can label the takes and offer the choice in place.
+  const { reviewTakeOf, chooserAfter } = useMemo(() => {
+    const takes = new Map<string, ReviewTake>()
+    const choosers = new Map<string, string[]>()
+    if (cleanupPreview?.kind !== 'retakes') return { reviewTakeOf: takes, chooserAfter: choosers }
+    const indexById = new Map(words.map((word, index) => [word.id, index]))
+    cleanupPreview.proposals.forEach((proposal) => {
+      const group = proposal.retakeGroup
+      if (!group) return
+      group.candidates.forEach((candidate, index) => {
+        candidate.wordIds.forEach((id, position) => takes.set(id, {
+          proposalId: proposal.id,
+          candidateId: candidate.id,
+          label: candidate.label,
+          index,
+          first: position === 0,
+          lastOfGroup: index === group.candidates.length - 1 && position === candidate.wordIds.length - 1,
+          recommended: candidate.id === group.recommendedCandidateId,
+        }))
+      })
+      // The chooser sits at the end of the sentence the last take belongs
+      // to, so a partial restart never gets a control in mid-sentence.
+      const last = group.candidates[group.candidates.length - 1]
+      let anchor = indexById.get(last.wordIds[last.wordIds.length - 1]) ?? -1
+      if (anchor < 0) return
+      let steps = 0
+      while (anchor < words.length - 1 && steps < 12 && !/[.!?][”"')\]]*$/.test(words[anchor].text.trim())) {
+        anchor += 1
+        if (!words[anchor].isRemoved) steps += 1
+      }
+      const anchorId = words[anchor].id
+      choosers.set(anchorId, [...(choosers.get(anchorId) ?? []), proposal.id])
+    })
+    return { reviewTakeOf: takes, chooserAfter: choosers }
+  }, [cleanupPreview, words])
+
+  const reviewProposalsById = useMemo(() => new Map(
+    cleanupPreview?.kind === 'retakes' ? cleanupPreview.proposals.map((proposal) => [proposal.id, proposal]) : [],
+  ), [cleanupPreview])
+
+
   const wordsById = useMemo(() => new Map(words.map((word) => [word.id, word])), [words])
   const insertsById = useMemo(() => new Map(insertClips.map((clip) => [clip.id, clip])), [insertClips])
+
+  /** Cut words of a durable group stay out of the reading flow unless asked for. */
+  const hiddenRetakeWords = useMemo(() => {
+    const hidden = new Set<string>()
+    if (audioPreviewMode === 'original') return hidden
+    retakeGroups.forEach((retake) => {
+      if (retake.id === revealedGroup) return
+      retake.candidates.forEach((candidate, index) => {
+        if (index === retake.selectedKeepIndex) return
+        // Only words that are actually cut leave the reading flow; a group
+        // whose takes were all restored keeps every word visible.
+        candidate.forEach((id) => { if (wordsById.get(id)?.isRemoved) hidden.add(id) })
+      })
+    })
+    return hidden
+  }, [retakeGroups, revealedGroup, audioPreviewMode, wordsById])
 
   const gapsByWord = useMemo(() => new Map(
     editedGaps(words, shortenedSet, sourceDuration, insertClips, gapTargets).map((gap) => [gap.wordId, gap]),
@@ -198,7 +282,10 @@ export default function TranscriptEditor({
         pillsShown.add(retakeKey)
         output.push({ kind: 'retakePill', retake })
       }
-      output.push({ kind: 'word', word, idx: index })
+      const take = reviewTakeOf.get(word.id)
+      if (take?.first) output.push({ kind: 'takeChip', take, idx: index })
+      if (!hiddenRetakeWords.has(word.id)) output.push({ kind: 'word', word, idx: index })
+      chooserAfter.get(word.id)?.forEach((proposalId) => output.push({ kind: 'takeChooser', proposalId }))
       insertsAfter.get(word.id)?.forEach((clip) => output.push({ kind: 'insert', clip }))
       if (!word.isRemoved) {
         const gap = gapsByWord.get(word.id)
@@ -215,7 +302,7 @@ export default function TranscriptEditor({
       }
     }
     return output
-  }, [words, insertClips, groupOf, gapsByWord, proposedGaps, gapPacing.detectionThresholdMs])
+  }, [words, insertClips, groupOf, gapsByWord, proposedGaps, gapPacing.detectionThresholdMs, reviewTakeOf, chooserAfter, hiddenRetakeWords])
 
   // Update the active word directly from the store so playback does not render
   // thousands of transcript tokens on every WaveSurfer time event.
@@ -422,6 +509,32 @@ export default function TranscriptEditor({
     setCorrection({ kind: 'word', id: word.id, text: word.text })
   }
 
+  /** Reword the selected kept words as one phrase; falls back to the single word. */
+  const beginPhraseCorrection = (ids: string[], fallback?: Word) => {
+    const span = ids.map((id) => wordsById.get(id)).filter((word): word is Word => Boolean(word) && !word!.isRemoved)
+    if (span.length < 2) {
+      if (fallback) beginCorrection(fallback)
+      return
+    }
+    cancelCorrection.current = false
+    const text = span.map((word) => word.text).join(' ')
+    setCorrection({
+      kind: 'phrase',
+      ids: span.map((word) => word.id),
+      text,
+      original: span.map((word) => word.originalText ?? word.text).join(' '),
+    })
+  }
+
+  const finishPhraseCorrection = (commit: boolean) => {
+    if (correction?.kind !== 'phrase') return
+    if (commit && !cancelCorrection.current) correctWords(correction.ids, correction.text)
+    cancelCorrection.current = false
+    setCorrection(null)
+    const firstId = correction.ids[0]
+    window.setTimeout(() => wordEls.current.get(firstId)?.focus({ preventScroll: true }), 0)
+  }
+
   const beginInsertCorrection = (clip: InsertClip) => {
     cancelCorrection.current = false
     setCorrection({ kind: 'insert', id: clip.id, text: clip.text })
@@ -493,19 +606,93 @@ export default function TranscriptEditor({
   }
   const menuActions: TranscriptMenuAction[] = []
 
+  /** Play across the join of an applied retake group: a beat before the kept take, then into it. */
+  const hearRetakeJoin = (groupId: string) => {
+    const durable = retakeGroups.find((candidate) => candidate.id === groupId)
+    const firstKeptId = durable?.candidates[durable.selectedKeepIndex]?.[0]
+    const span = firstKeptId ? times.get(firstKeptId) : undefined
+    if (!span) return
+    player.auditionRange(Math.max(0, span.start - 0.8), span.start + 1.6, 0)
+  }
+
+  /** The paragraph gutter before a word: the speaker name when one is set, otherwise a hover-only add control. */
+  const paragraphLabel = (idx: number) => {
+    const word = words[idx]
+    if (!word) return null
+    // The break is judged against the previous word the listener still
+    // hears, so cut takes do not glue two paragraphs together.
+    let previous = idx - 1
+    while (previous >= 0 && words[previous].isRemoved) previous -= 1
+    const before = previous >= 0 ? words[previous] : null
+    // The silence right before this word is what the listener hears; the
+    // sentence end is judged on the previous word that is still heard.
+    const pauseBefore = idx > 0 ? words[idx - 1].gapAfter : 0
+    const starts = idx === 0 || Boolean(speakerByWord[word.id])
+      || (before !== null && pauseBefore >= 1.2 && /[.!?]$/.test(before.text))
+    if (!starts) return null
+    const speakerName = speakers.find((speaker) => speaker.id === speakerByWord[word.id])?.name
+    return (
+      <span className={`transcript-paragraph${speakerName ? ' has-speaker' : ''}`}>
+        <button
+          type="button"
+          onClick={() => openSpeakerNaming(word.id)}
+          aria-label={speakerName ? `Speaker ${speakerName}; change the speaker at this word` : 'Name the speaker from this word on'}
+          title={speakerName ? 'Change the speaker at this word' : 'Name the speaker from this word on'}
+        >
+          {speakerName ?? '+ speaker'}
+        </button>
+      </span>
+    )
+  }
+
   if (contextMenu?.target.kind === 'word') {
     const { wordId, idx } = contextMenu.target
     const word = wordsById.get(wordId)
     if (word) {
-      // The ref write lives inside onSelect, which only ever runs from a menu
+      const insideSelection = selection !== null && idx >= selection[0] && idx <= selection[1]
+      // The ref writes live inside onSelect, which only ever runs from a menu
       // click. The rule follows the closure and cannot see that.
+      if (insideSelection && selectedKeptIds.length > 1 && !word.isRemoved) {
+        // eslint-disable-next-line react-hooks/refs
+        menuActions.push({
+          id: 'reword-selection',
+          label: `Reword selection (${selectedKeptIds.length} words)…`,
+          onSelect: () => beginPhraseCorrection(selectedKeptIds, word),
+          returnFocus: false,
+        })
+      }
       // eslint-disable-next-line react-hooks/refs
       menuActions.push({
         id: 'edit-word',
-        label: 'Correct text',
+        label: 'Reword this word…',
         onSelect: () => beginCorrection(word),
         returnFocus: false,
       })
+      if (word.originalText) {
+        menuActions.push({
+          id: 'revert-word-text',
+          label: `Revert to original text “${word.originalText}”`,
+          onSelect: () => revertWordText(word.id),
+        })
+      }
+
+      const reviewTake = reviewTakeOf.get(word.id)
+      const reviewProposal = reviewTake ? reviewProposalsById.get(reviewTake.proposalId) : undefined
+      if (reviewTake && reviewProposal?.retakeGroup) {
+        reviewProposal.retakeGroup.candidates.forEach((candidate, candidateIndex) => {
+          menuActions.push({
+            id: `review-keep-${candidateIndex}`,
+            label: `Keep ${candidate.label}${candidate.id === reviewProposal.retakeGroup!.recommendedCandidateId ? ' (recommended)' : ''}`,
+            onSelect: () => selectRetakeCandidate(reviewProposal.id, candidate.id),
+            dividerBefore: candidateIndex === 0,
+          })
+        })
+        menuActions.push({
+          id: 'review-not-a-retake',
+          label: 'Not a retake',
+          onSelect: () => ignoreCleanupProposal(reviewProposal.id),
+        })
+      }
 
       if (!word.isRemoved) {
         menuActions.push({
@@ -574,6 +761,11 @@ export default function TranscriptEditor({
             label: `Restore all ${durable.candidates.length} takes`,
             onSelect: () => restoreRetakeGroupById(durable.id),
             dividerBefore: true,
+          })
+          menuActions.push({
+            id: 'hear-retake-join',
+            label: 'Hear the cut',
+            onSelect: () => hearRetakeJoin(durable.id),
           })
           durable.candidates.forEach((candidate, candidateIndex) => {
             if (candidateIndex === durable.selectedKeepIndex) return
@@ -668,6 +860,11 @@ export default function TranscriptEditor({
         id: 'restore-retake-group',
         label: `Restore all ${durable.candidates.length} takes`,
         onSelect: () => restoreRetakeGroupById(durable.id),
+      })
+      menuActions.push({
+        id: 'hear-retake-join',
+        label: 'Hear the cut',
+        onSelect: () => hearRetakeJoin(durable.id),
       })
       durable.candidates.forEach((candidate, candidateIndex) => {
         if (candidateIndex === durable.selectedKeepIndex) return
@@ -849,12 +1046,23 @@ export default function TranscriptEditor({
             const word = words[selAnchor]
             if (word && !word.isRemoved) {
               const span = times.get(word.id)
-              if (span) requestSeek(span.start, event.altKey)
+              // A double-click means "reword", not "seek", so the seek waits
+              // long enough for a second click to cancel it.
+              if (seekTimer.current) window.clearTimeout(seekTimer.current)
+              const autoplay = event.altKey
+              if (span) seekTimer.current = window.setTimeout(() => { seekTimer.current = null; requestSeek(span.start, autoplay) }, 230)
             }
           }
         }}
+        onDoubleClick={() => {
+          if (seekTimer.current) { window.clearTimeout(seekTimer.current); seekTimer.current = null }
+        }}
       >
-        <article className="transcript-page max-w-[760px] mx-auto text-[18px] leading-[1.9] text-ink" aria-label="Editable transcript">
+        <article
+          className="transcript-page max-w-[760px] mx-auto text-[18px] leading-[1.9] text-ink"
+          aria-label="Editable transcript"
+          onMouseLeave={() => { if (contextMenu?.target.kind !== 'retake') setRevealedGroup(null) }}
+        >
           <h1 className="document-title">{projectName}</h1>
           {items.map((item, key) => {
             if (item.kind === 'retakePill') {
@@ -864,35 +1072,99 @@ export default function TranscriptEditor({
                 group: [...retake.group],
                 ...(retake.groupId ? { groupId: retake.groupId } : {}),
               }
+              const menuLabel = `Actions for ${retake.candidateCount ?? 2}-take retake group`
+              const chipText = retake.groupId
+                ? `Take ${(retake.selectedKeepIndex ?? 0) + 1} kept · ${retake.group.length} word${retake.group.length === 1 ? '' : 's'} cut`
+                : `Retake cut · ${retake.group.length} word${retake.group.length === 1 ? '' : 's'}`
+              const revealed = retake.groupId ? revealedGroup === retake.groupId : true
               return (
                 <button
                   type="button"
                   key={`pill-${key}`}
                   data-retake-group={retake.groupId ?? retake.group[0]}
-                  onClick={() => retake.groupId ? restoreRetakeGroupById(retake.groupId) : restoreRetakeGroup(retake.group)}
-                  onContextMenu={(event) => openPointerMenu(
-                    event,
-                    retakeTarget,
-                    `Actions for ${retake.candidateCount ?? 2}-take retake group`,
-                    retake.group[0],
-                  )}
+                  onClick={(event) => openPointerMenu(event, retakeTarget, menuLabel, retake.group[0])}
+                  onContextMenu={(event) => openPointerMenu(event, retakeTarget, menuLabel, retake.group[0])}
+                  onMouseEnter={() => { if (retake.groupId) setRevealedGroup(retake.groupId) }}
+                  onFocus={() => { if (retake.groupId) setRevealedGroup(retake.groupId) }}
                   onKeyDown={(event) => {
-                    if (isContextMenuKey(event)) {
-                      openKeyboardMenu(
-                        event,
-                        retakeTarget,
-                        `Actions for ${retake.candidateCount ?? 2}-take retake group`,
-                        retake.group[0],
-                      )
-                    }
+                    if (isContextMenuKey(event)) openKeyboardMenu(event, retakeTarget, menuLabel, retake.group[0])
                   }}
                   aria-haspopup="menu"
                   aria-expanded={contextMenu?.target.kind === 'retake' && contextMenu.target.group[0] === retake.group[0]}
-                  className="mx-1 min-h-7 px-2.5 rounded-full bg-plum-soft border border-plum/30 text-plum-dark text-[11px] align-middle hover:bg-plum/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-plum"
-                  title="Restore the takes, or choose a different retained take with right-click or Shift+F10"
+                  aria-pressed={revealed}
+                  className={`retake-chip${revealed ? ' is-open' : ''}`}
+                  title={retake.groupId
+                    ? 'Hover to see the cut take. Click to switch take or restore all.'
+                    : 'Click to restore or change this cut'}
                 >
-                  {retake.groupId ? `Retake group · ${retake.candidateCount} takes` : `Restore retake · ${retake.group.length} words`}
+                  {chipText} <span aria-hidden="true">▾</span>
                 </button>
+              )
+            }
+            if (item.kind === 'takeChip') {
+              const { take, idx } = item
+              const choice = cleanupPreview?.retakeCandidateChoices[take.proposalId]
+              const state = !choice ? 'open' : choice === take.candidateId ? 'keep' : 'cut'
+              return (
+                <span key={`take-${take.candidateId}`}>
+                  {paragraphLabel(idx)}
+                  <span className={`take-chip is-${state}`} role="note">
+                    {take.label}{state === 'keep' ? ' · kept' : ''}
+                  </span>
+                </span>
+              )
+            }
+            if (item.kind === 'takeChooser') {
+              const proposal = reviewProposalsById.get(item.proposalId)
+              const group = proposal?.retakeGroup
+              if (!proposal || !group) return null
+              const choice = cleanupPreview?.retakeCandidateChoices[proposal.id]
+              const canAudition = status === 'ready' && waveformReady
+              return (
+                <span
+                  key={`chooser-${proposal.id}`}
+                  className={`take-chooser${focusedCleanupProposalId === proposal.id ? ' is-focused' : ''}`}
+                  role="group"
+                  aria-label={`Choose the take to keep at ${proposal.context.slice(0, 40)}`}
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <span className="take-chooser-label">Keep</span>
+                  {group.candidates.map((candidate) => {
+                    const recommended = candidate.id === group.recommendedCandidateId
+                    return (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        aria-pressed={choice === candidate.id}
+                        className={`take-chooser-btn${choice === candidate.id ? ' is-on' : ''}${recommended && !choice ? ' is-rec' : ''}`}
+                        onClick={() => selectRetakeCandidate(proposal.id, candidate.id)}
+                        title={recommended ? `${candidate.label} is recommended` : `Keep ${candidate.label}`}
+                      >
+                        {candidate.label}{recommended ? ' ✓' : ''}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    className="take-chooser-btn is-ghost"
+                    disabled={!canAudition || !choice}
+                    onClick={() => auditionCleanupProposal(proposal.id)}
+                    title={choice ? 'Play across the cut' : 'Choose a take first'}
+                  >
+                    ▶ hear the cut
+                  </button>
+                  {!choice && (
+                    <button
+                      type="button"
+                      className="take-chooser-btn is-ghost"
+                      disabled={!canAudition}
+                      onClick={() => auditionRetakeCandidate(proposal.id, group.candidates[0].id)}
+                      title="Play the first take"
+                    >
+                      ▶ compare
+                    </button>
+                  )}
+                </span>
               )
             }
             if (item.kind === 'insert') {
@@ -1008,10 +1280,10 @@ export default function TranscriptEditor({
                   ? `Restore or edit the ${item.targetGapMs ?? gapPacing.targetGapMs} millisecond pause`
                   : `Shorten ${item.gap.toFixed(1)} second pause`
               const dynamicText = item.proposed
-                ? `${item.gap.toFixed(1)}s to ${gapPacing.targetGapMs}ms`
+                ? `${item.gap.toFixed(1)} s → ${item.targetGapMs ?? gapPacing.targetGapMs} ms`
                 : item.shortened
-                  ? `${item.targetGapMs ?? gapPacing.targetGapMs}ms pause`
-                  : `${item.gap.toFixed(1)}s pause`
+                  ? `${item.targetGapMs ?? gapPacing.targetGapMs} ms`
+                  : `${item.gap.toFixed(1)} s`
               return (
                 <button
                   type="button"
@@ -1045,7 +1317,7 @@ export default function TranscriptEditor({
                       ? 'bg-plum-soft border-plum/40 text-plum-dark focus-visible:ring-plum'
                       : item.shortened
                         ? 'bg-forest-soft border-forest/30 text-forest-dark focus-visible:ring-forest'
-                        : 'bg-ochre-soft border-ochre/25 text-ochre-dark hover:bg-ochre/15 focus-visible:ring-ochre'
+                        : 'bg-transparent border-line text-ink-faint hover:bg-ochre-soft hover:border-ochre/40 hover:text-ochre-dark focus-visible:ring-ochre'
                   }`}
                   aria-label={dynamicLabel}
                   title={dynamicLabel}
@@ -1060,6 +1332,14 @@ export default function TranscriptEditor({
             const selected = selection !== null && idx >= selection[0] && idx <= selection[1]
             const proposed = proposedWords.get(word.id)
             const editing = correction?.kind === 'word' && correction.id === word.id
+            const phrase = correction?.kind === 'phrase' ? correction : null
+            const phraseMember = Boolean(phrase?.ids.includes(word.id))
+            const phraseHead = phraseMember && phrase!.ids[0] === word.id
+            const reviewTake = reviewTakeOf.get(word.id)
+            const reviewChoice = reviewTake ? cleanupPreview?.retakeCandidateChoices[reviewTake.proposalId] : undefined
+            const reviewState = reviewTake
+              ? !reviewChoice ? 'open' : reviewChoice === reviewTake.candidateId ? 'keep' : 'cut'
+              : null
             const classes = [
               'word-token rounded-[4px] px-[2px] outline-none',
               word.isRemoved
@@ -1069,11 +1349,14 @@ export default function TranscriptEditor({
                     ? 'text-ochre/60 hover:text-ochre-dark/85'
                     : 'text-ink-faint hover:text-ink-muted'
                 : 'cursor-text hover:bg-canvas-soft',
-              proposed
-                ? proposed.isRetake
-                  ? 'bg-plum/15 text-plum-dark ring-1 ring-inset ring-plum/40'
-                  : 'bg-ochre/15 text-ochre-dark ring-1 ring-inset ring-ochre/35'
-                : '',
+              reviewState
+                ? `review-word is-${reviewState}`
+                : proposed
+                  ? proposed.isRetake
+                    ? 'bg-plum/15 text-plum-dark ring-1 ring-inset ring-plum/40'
+                    : 'bg-ochre/15 text-ochre-dark ring-1 ring-inset ring-ochre/35'
+                  : '',
+              word.originalText ? 'word-edited' : '',
               selected ? 'bg-ember/20 text-ink ring-1 ring-inset ring-ember/45' : '',
               activeWordIds.has(word.id)
                 ? 'search-hit-active'
@@ -1081,11 +1364,38 @@ export default function TranscriptEditor({
                   ? 'search-hit'
                   : '',
             ].join(' ')
+            if (phraseMember && !phraseHead) return <span key={word.id} />
 
             return (
               <span key={word.id}>
-                {(idx === 0 || speakerByWord[word.id] || (idx > 0 && words[idx - 1].gapAfter >= 1.2 && /[.!?]$/.test(words[idx - 1].text))) && <span className="transcript-paragraph"><button onClick={() => openSpeakerNaming(word.id)} title="Name the speaker at this word">{speakers.find(speaker => speaker.id === speakerByWord[word.id])?.name || 'Add speaker'}</button></span>}
-                {editing ? (
+                {!reviewTake?.first && paragraphLabel(idx)}
+                {phraseHead && phrase ? (
+                  <span className="reword-field">
+                    <EditIcon className="h-3.5 w-3.5 text-ember" />
+                    <input
+                      autoFocus
+                      value={phrase.text}
+                      maxLength={500}
+                      onChange={(event) => setCorrection({ ...phrase, text: event.target.value })}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          finishPhraseCorrection(true)
+                        } else if (event.key === 'Escape') {
+                          event.preventDefault()
+                          cancelCorrection.current = true
+                          finishPhraseCorrection(false)
+                        }
+                      }}
+                      onBlur={() => finishPhraseCorrection(true)}
+                      style={{ width: `${Math.min(48, Math.max(8, phrase.text.length + 2))}ch` }}
+                      aria-label={`Reword “${phrase.original}”`}
+                    />
+                    <span className="reword-hint">Enter saves · Esc cancels · was “{phrase.original}”</span>
+                  </span>
+                ) : editing ? (
                   <span className="inline-flex align-middle items-center gap-1 mx-0.5">
                     <EditIcon className="h-3.5 w-3.5 text-ember" />
                     <input
@@ -1134,7 +1444,24 @@ export default function TranscriptEditor({
                       if (event.button !== 0) return
                       event.preventDefault()
                       event.currentTarget.focus()
-                      if (word.isRemoved) { restoreWords([word.id]); return }
+                      if (word.isRemoved) {
+                        // A word cut as part of a retake choice is restored
+                        // as a group decision, never one word at a time.
+                        const pill = groupOf.get(word.id)
+                        if (pill?.groupId) {
+                          openMenu(
+                            { kind: 'retake', group: [...pill.group], groupId: pill.groupId },
+                            event.currentTarget,
+                            `Actions for ${pill.candidateCount ?? 2}-take retake group`,
+                            event.clientX,
+                            event.clientY,
+                            word.id,
+                          )
+                          return
+                        }
+                        restoreWords([word.id])
+                        return
+                      }
                       setDragging(true)
                       setSelection(idx, idx)
                     }}
@@ -1166,13 +1493,25 @@ export default function TranscriptEditor({
                         openSpeakerNaming(word.id)
                       } else if (word.isRemoved && (event.key === 'Enter' || event.key === ' ')) {
                         event.preventDefault()
-                        restoreWords([word.id])
+                        const pill = groupOf.get(word.id)
+                        if (pill?.groupId) {
+                          openKeyboardMenu(
+                            event,
+                            { kind: 'retake', group: [...pill.group], groupId: pill.groupId },
+                            `Actions for ${pill.candidateCount ?? 2}-take retake group`,
+                            word.id,
+                          )
+                        } else {
+                          restoreWords([word.id])
+                        }
                       } else if (event.key === 'Enter') {
                         const span = times.get(word.id)
                         if (span) requestSeek(span.start, true)
                       } else if (event.key === 'F2') {
                         event.preventDefault()
-                        beginCorrection(word)
+                        const insideSelection = selection !== null && idx >= selection[0] && idx <= selection[1]
+                        if (insideSelection && selectedKeptIds.length > 1 && !word.isRemoved) beginPhraseCorrection(selectedKeptIds, word)
+                        else beginCorrection(word)
                       } else if ((event.key === 'Backspace' || event.key === 'Delete') && !word.isRemoved) {
                         event.preventDefault()
                         const insideSelection = selection !== null && idx >= selection[0] && idx <= selection[1]
@@ -1186,11 +1525,13 @@ export default function TranscriptEditor({
                     }}
                     title={word.isRemoved
                       ? 'Click to restore · right-click for more actions'
-                      : 'Click to seek · Alt-click to play · double-click to correct · right-click for actions'}
+                      : word.originalText
+                        ? `Reworded · was “${word.originalText}” · right-click to revert`
+                        : 'Click to seek · Alt-click to play · double-click to reword · right-click for actions'}
                   >
-                    <span className={word.isRemoved ? 'line-through decoration-current/70' : ''}>{word.text}</span>
+                    <span className={word.isRemoved || reviewState === 'cut' ? 'line-through decoration-current/70' : ''}>{word.text}</span>
                     {word.isRemoved && !groupOf.has(word.id) && (
-                      <span className="ml-1 inline-flex -translate-y-px items-center rounded border border-current/25 px-1 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide opacity-85 no-underline">
+                      <span className="restore-badge">
                         Restore
                       </span>
                     )}
@@ -1210,7 +1551,7 @@ export default function TranscriptEditor({
         {(words.length > 0 || insertClips.length > 0) && (
           <div className="max-w-[860px] mx-auto mt-7 pt-4 border-t border-line flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted">
             <span>Drag words, then press Backspace to ripple-cut</span>
-            <span>F2 corrects text without changing audio</span>
+            <span>F2 rewords the focused word, or the whole selection, without changing audio</span>
             <span>Shift+F10 opens actions for the focused word</span>
             <span>Inserted audio is shown as an indigo transcript chip</span>
             <span>G shortens the pause at the playhead</span>

@@ -35,7 +35,7 @@ import {
   VERDICT_LABEL,
   type LevelVerdict,
 } from '../lib/levelMeter'
-import { AudioIcon, CloseIcon, PauseIcon, PlayIcon, UploadIcon } from './Icons'
+import { BrandMark, CloseIcon, PauseIcon, PlayIcon, UploadIcon } from './Icons'
 import { PRODUCT_FILE_STEM, PRODUCT_NAME } from '../lib/branding'
 import { RECORDER_DEVICE_KEY, RECORDER_PROCESSING_KEY } from '../lib/workspacePreferences'
 
@@ -92,7 +92,7 @@ function isSupportedImport(file: File): boolean {
 function microphoneError(error: unknown): string {
   const name = error instanceof DOMException || error instanceof Error ? error.name : ''
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return `Microphone permission was denied. Allow microphone access in Windows and ${PRODUCT_NAME}, then try again.`
+    return `Microphone permission was denied. Allow microphone access for ${PRODUCT_NAME} in your system settings, then try again.`
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
     return 'No microphone was found. Connect or enable an input device, then try again.'
@@ -179,8 +179,11 @@ export default function RecordingDialog(props: RecordingDialogProps) {
   const meterFrameRef = useRef<number | null>(null)
   const peakRef = useRef(0)
   const waveformRef = useRef<HTMLCanvasElement>(null)
+  const wavePaintedRef = useRef(false)
   const monitorRequestRef = useRef(0)
   const [checking, setChecking] = useState(false)
+  /** True once the meter has painted at least one frame this session. */
+  const [wavePainted, setWavePainted] = useState(false)
   const [clipped, setClipped] = useState(false)
   const takesRef = useRef<TakeStack>(emptyTakeStack)
   const mediaRequestRef = useRef(0)
@@ -305,11 +308,14 @@ export default function RecordingDialog(props: RecordingDialogProps) {
         const canvas = waveformRef.current
         const paint = canvas?.getContext('2d')
         if (canvas && paint) {
+          if (!wavePaintedRef.current) { wavePaintedRef.current = true; setWavePainted(true) }
           paint.clearRect(0, 0, canvas.width, canvas.height)
-          paint.fillStyle = '#3caaa2'
+          paint.fillStyle = recorderRef.current ? '#ee643f' : '#3caaa2'
+          const step = 4
+          const offset = Math.max(0, canvas.width - history.length * step)
           history.forEach((value, i) => {
-            const height = Math.max(1, value * canvas.height)
-            paint.fillRect(i * 4, (canvas.height - height) / 2, 2, height)
+            const height = Math.max(2, value * (canvas.height - 8))
+            paint.fillRect(offset + i * step, (canvas.height - height) / 2, 2, height)
           })
         }
       }
@@ -461,7 +467,7 @@ export default function RecordingDialog(props: RecordingDialogProps) {
     if (takesRef.current.takes.length >= MAX_TAKES) { setError('Save or download and discard a take before recording another. Your existing takes are preserved.'); return }
     setError('')
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setError('Microphone recording is not supported by this Windows WebView. You can import an audio file instead.')
+      setError('Microphone recording is not supported in this window. You can import an audio file instead.')
       return
     }
     const request = ++mediaRequestRef.current
@@ -802,6 +808,19 @@ export default function RecordingDialog(props: RecordingDialogProps) {
           ? 'Recording stopped. Preview ready.'
           : ''
 
+  const meterSegments = 28
+  const litSegments = Math.round(level.scale * meterSegments)
+  const peakSegment = Math.round(level.peak * meterSegments)
+  const meterLive = recording || starting || monitoring
+  const meterHot = level.verdict === 'clipping' || level.verdict === 'hot'
+  const stageState = starting ? 'starting' : recording ? (paused ? 'paused' : 'recording') : previewUrl ? 'reviewing' : 'idle'
+  const recordLabel = starting
+    ? 'Opening microphone…'
+    : takes.takes.length
+      ? 'Record another take'
+      : isProject ? 'Start recording' : 'Record'
+  const canSave = !saving && !recording && !starting && Boolean(audioFile) && (isProject ? Boolean(projectName.trim()) : Boolean(text.trim()))
+
   return (
     <div
       className="fixed inset-0 z-[100] flex min-h-0 items-center justify-center overflow-hidden bg-black/45 p-3 backdrop-blur-sm sm:p-6"
@@ -821,15 +840,13 @@ export default function RecordingDialog(props: RecordingDialogProps) {
         aria-labelledby={confirmingClose ? confirmTitleId : titleId}
         aria-describedby={confirmingClose ? confirmDescriptionId : descriptionId}
         onKeyDown={handleDialogKeyDown}
-        className="recorder-dialog flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line-strong bg-canvas-raised text-ink shadow-2xl shadow-ink/25 sm:max-h-[calc(100vh-3rem)]"
+        className="recorder-dialog"
       >
-        <div className="flex shrink-0 items-start gap-3 border-b border-line px-5 py-4">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ember-soft text-ember-dark">
-            <AudioIcon className="h-5 w-5" />
-          </span>
+        <div className="recorder-head">
+          <span className="recorder-head-icon"><BrandMark size={40} /></span>
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-base font-semibold text-ink">{title}</h2>
-            <p id={descriptionId} className="mt-1 text-[12px] leading-5 text-ink-muted">{description}</p>
+            <h2 id={titleId}>{title}</h2>
+            <p id={descriptionId}>{description}</p>
           </div>
           <button
             type="button"
@@ -843,291 +860,241 @@ export default function RecordingDialog(props: RecordingDialogProps) {
         </div>
 
         {confirmingClose ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-7">
-            <div className="rounded-2xl border border-ochre/30 bg-ochre-soft px-5 py-5">
-              <h3 id={confirmTitleId} className="text-sm font-semibold text-ink">Discard this unsaved recording?</h3>
-              <p id={confirmDescriptionId} className="mt-2 text-[12px] leading-5 text-ink-muted">
+          <div className="recorder-body">
+            <div className="recorder-confirm">
+              <h3 id={confirmTitleId}>Discard this unsaved recording?</h3>
+              <p id={confirmDescriptionId}>
                 The current take has not been saved. Continue reviewing it, or discard it and close.
               </p>
-              <div className="mt-5 flex flex-wrap justify-end gap-2">
-                <button
-                  ref={keepButtonRef}
-                  type="button"
-                  onClick={keepRecording}
-                  className="h-10 rounded-lg border border-line-strong bg-canvas-raised px-4 text-[12px] font-medium text-ink hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                >
-                  Continue reviewing
-                </button>
-                <button
-                  type="button"
-                  onClick={finishClose}
-                  className="h-10 rounded-lg bg-danger px-4 text-[12px] font-semibold text-white hover:bg-danger-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
-                >
-                  Discard and close
-                </button>
+              <div className="review-actions" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+                <button ref={keepButtonRef} type="button" onClick={keepRecording} className="review-btn">Continue reviewing</button>
+                <button type="button" onClick={finishClose} className="review-btn is-danger">Discard and close</button>
               </div>
             </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              <section aria-label="Audio capture" className="rounded-2xl border border-line bg-canvas-soft p-4">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  {recording ? (
-                    <>
-                      <button
-                        ref={recordButtonRef}
-                        type="button"
-                        data-initial-focus
-                        onClick={togglePause}
-                        className="inline-flex h-11 items-center gap-2.5 rounded-xl bg-ember px-4 text-sm font-semibold text-on-accent hover:bg-ember-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                      >
-                        {paused ? <PlayIcon className="h-4 w-4" /> : <PauseIcon className="h-4 w-4" />}
-                        {paused ? 'Resume' : 'Pause'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={stopRecording}
-                        className="inline-flex h-11 items-center gap-2.5 rounded-xl border border-line-strong bg-canvas-raised px-4 text-sm font-semibold text-ink hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                      >
-                        <span className="h-3 w-3 rounded-[2px] bg-danger" aria-hidden="true" />
-                        Stop recording
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      ref={recordButtonRef}
-                      type="button"
-                      data-initial-focus
-                      onClick={() => void beginRecording()}
-                      disabled={starting || saving}
-                      className="inline-flex h-11 items-center gap-2.5 rounded-xl bg-ember px-4 text-sm font-semibold text-on-accent hover:bg-ember-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      <AudioIcon className="h-4 w-4" />
-                      {starting
-                        ? 'Opening microphone...'
-                        : takes.takes.length
-                          ? 'Record another take'
-                          : isProject ? 'Start recording' : 'Record'}
-                    </button>
-                  )}
-                  <span
-                    className={`recorder-clock font-mono text-sm tabular-nums ${
-                      paused ? 'text-ochre-dark' : recording ? 'text-ember-dark' : 'text-ink-muted'
-                    }`}
-                    aria-label={`Recording duration ${formatElapsed(elapsed)}`}
-                  >
-                    {formatElapsed(elapsed)}
-                  </span>
-                  {paused && (
-                    <span className="rounded-full bg-ochre-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ochre-dark">
-                      Paused
+            <div className="recorder-body">
+              <section aria-label="Audio capture" className={`recorder-stage is-${stageState}`}>
+                <div className="recorder-stage-top">
+                  <div className="recorder-transport">
+                    {recording ? (
+                      <>
+                        <button
+                          ref={recordButtonRef}
+                          type="button"
+                          data-initial-focus
+                          onClick={stopRecording}
+                          className="recorder-main is-stop"
+                          aria-label="Stop recording"
+                          title="Stop recording"
+                        >
+                          <span className="recorder-stop-square" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={togglePause}
+                          className="recorder-secondary"
+                          aria-pressed={paused}
+                          title={paused ? 'Resume recording' : 'Pause recording'}
+                        >
+                          {paused ? <PlayIcon className="h-4 w-4" /> : <PauseIcon className="h-4 w-4" />}
+                          {paused ? 'Resume' : 'Pause'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          ref={recordButtonRef}
+                          type="button"
+                          data-initial-focus
+                          onClick={() => void beginRecording()}
+                          disabled={starting || saving}
+                          className="recorder-main"
+                          aria-label={recordLabel}
+                          title={recordLabel}
+                        >
+                          <span className="recorder-record-dot" aria-hidden="true" />
+                        </button>
+                        <div className="recorder-main-copy">
+                          <strong>{recordLabel}</strong>
+                          <span>{starting ? 'Waiting for the microphone' : takes.takes.length ? 'Earlier takes stay available' : 'Space or Enter also starts'}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="recorder-clock-block">
+                    <span className={`recorder-state is-${stageState}`}>
+                      <span className="recorder-state-dot" aria-hidden="true" />
+                      {stageState === 'recording' ? 'Recording' : stageState === 'paused' ? 'Paused' : stageState === 'starting' ? 'Opening mic' : stageState === 'reviewing' ? 'Take ready' : 'Ready'}
                     </span>
-                  )}
-                  <div className="ml-auto flex items-center gap-2">
-                    <input
-                      ref={importRef}
-                      type="file"
-                      accept=".mp3,.wav,.m4a,.mp4,.aac,.ogg,.flac,.webm,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/x-m4a,audio/mp4,audio/aac,audio/ogg,application/ogg,audio/flac,audio/x-flac,audio/webm,video/webm,video/mp4"
-                      className="sr-only"
-                      onChange={importAudio}
-                      aria-label={isProject ? 'Import audio for new project' : 'Import insert audio'}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => importRef.current?.click()}
-                      disabled={recording || starting || saving}
-                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-line-strong bg-canvas-raised px-3 text-[12px] font-medium text-ink hover:bg-canvas-soft disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-                    >
-                      <UploadIcon className="h-4 w-4" />
-                      Import
-                    </button>
+                    <span className="recorder-clock" aria-label={`Recording duration ${formatElapsed(elapsed)}`}>
+                      {formatElapsed(elapsed)}
+                    </span>
                   </div>
                 </div>
 
-                <canvas ref={waveformRef} width={720} height={72} className="recorder-waveform" role="img" aria-label="Live microphone level history" />
-                {clipped && <p role="status" className="mt-2 text-[12px] text-danger-dark">Clipping detected during this take. Lower your microphone gain before the next take.</p>}
-                {!recording && (
-                  <div className="mt-3 flex items-center gap-2">
+                <div className="recorder-wave">
+                  <canvas ref={waveformRef} width={720} height={96} role="img" aria-label="Live microphone level history" />
+                  {!wavePainted && (
+                    <span className="recorder-wave-empty">
+                      {isProject ? 'Your waveform appears here while you record.' : 'The waveform of this take appears here.'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="recorder-meter-row">
+                  {!recording && (
                     <button
                       type="button"
                       onClick={() => (monitoring || checking ? stopMonitor() : void startMonitor())}
                       disabled={starting || saving}
                       aria-pressed={monitoring}
-                      className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-[12px] font-medium transition-colors disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember ${
-                        monitoring
-                          ? 'border border-forest/40 bg-forest-soft text-forest-dark'
-                          : 'border border-line-strong bg-canvas-raised text-ink hover:bg-canvas-soft'
-                      }`}
+                      className={`recorder-check${monitoring ? ' is-on' : ''}`}
                       title="Open the microphone and watch the level without recording"
                     >
-                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${monitoring ? 'bg-forest' : 'bg-line-strong'}`} />
-                      {checking ? 'Cancel microphone request' : monitoring ? 'Stop level check' : 'Check level'}
+                      <span aria-hidden="true" className="recorder-state-dot" />
+                      {checking ? 'Cancel' : monitoring ? 'Stop check' : 'Check level'}
                     </button>
-                    <span className="text-[11px] text-ink-muted">
-                      {monitoring ? 'Speak normally and set your gain before recording.' : 'Set your gain before the take.'}
-                    </span>
-                  </div>
-                )}
-
-                <div className="mt-3.5">
+                  )}
                   <div
-                    className="flex h-2.5 w-full overflow-hidden rounded-full bg-line"
+                    className="recorder-meter"
                     role="meter"
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={Math.round(level.scale * 100)}
                     aria-label="Microphone input level"
                   >
-                    <div
-                      className={`h-full rounded-full transition-[width] duration-75 ${
-                        level.verdict === 'clipping' || level.verdict === 'hot' ? 'bg-danger' : 'bg-ember'
-                      }`}
-                      style={{ width: `${Math.round(level.scale * 100)}%` }}
-                    />
-                    {level.peak > 0 && (
-                      <div
-                        className="h-full w-0.5 bg-ink/50"
-                        style={{ marginLeft: `${Math.max(0, Math.round((level.peak - level.scale) * 100))}%` }}
-                        aria-hidden="true"
-                      />
-                    )}
+                    {Array.from({ length: meterSegments }, (_, index) => {
+                      const zone = index >= meterSegments * 0.88 ? 'hot' : index >= meterSegments * 0.7 ? 'warm' : 'ok'
+                      const lit = index < litSegments
+                      const peak = level.peak > 0 && index === Math.min(meterSegments - 1, peakSegment)
+                      return <span key={index} className={`recorder-seg is-${zone}${lit ? ' is-lit' : ''}${peak ? ' is-peak' : ''}`} />
+                    })}
                   </div>
-                  <p className={`mt-1.5 text-[11px] ${
-                    level.verdict === 'clipping' || level.verdict === 'hot' ? 'text-danger-dark' : 'text-ink-muted'
-                  }`}>
-                    {recording || starting || monitoring
-                      ? VERDICT_LABEL[level.verdict]
-                      : 'Input level appears while recording, or press Check level first.'}
-                  </p>
+                  <span className={`recorder-verdict${meterHot ? ' is-hot' : meterLive && level.verdict === 'good' ? ' is-good' : ''}`} aria-live="polite">
+                    {meterLive ? VERDICT_LABEL[level.verdict] : clipped ? 'Clipped last take' : 'No signal yet'}
+                  </span>
                 </div>
-
-{/* Always offered, even with a single input: the picker is also where you
-                    confirm which microphone is about to be used. */}
-                {(
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label className="block text-[11px] font-medium text-ink-muted" htmlFor={`${titleId}-device`}>
-                      Microphone
-                      <select
-                        id={`${titleId}-device`}
-                        value={activeDeviceId}
-                        onChange={(event) => setDeviceId(event.target.value)}
-                        disabled={saving || starting || recording || checking}
-                        className="mt-1 h-9 w-full rounded-lg border border-line-strong bg-canvas-raised px-2 text-[12px] text-ink outline-none focus:border-ember focus:ring-2 focus:ring-ember/20 disabled:opacity-60"
-                      >
-                        <option value="">System default</option>
-                        {devices.map((device, index) => (
-                          <option key={device.deviceId} value={device.deviceId}>
-                            {device.label || `Microphone ${index + 1}`}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="mt-1 block text-[10px] text-ink-muted">
-                        {devices.length === 0
-                          ? 'No input listed yet. Run a level check to grant access.'
-                          : devices.every((device) => !device.label)
-                            ? 'Names appear once you have allowed microphone access once.'
-                            : 'Remembered for next time on this device.'}
-                      </span>
-                    </label>
-
-                    <label className="block text-[11px] font-medium text-ink-muted" htmlFor={`${titleId}-processing`}>
-                      Input processing
-                      <select
-                        id={`${titleId}-processing`}
-                        value={voiceProcessing ? 'on' : 'off'}
-                        onChange={(event) => setVoiceProcessing(event.target.value === 'on')}
-                        disabled={saving || starting || recording || checking}
-                        className="mt-1 h-9 w-full rounded-lg border border-line-strong bg-canvas-raised px-2 text-[12px] text-ink outline-none focus:border-ember focus:ring-2 focus:ring-ember/20 disabled:opacity-60"
-                      >
-                        <option value="on">Clean up (noise suppression, auto gain)</option>
-                        <option value="off">Raw input (recommended for a set-gain mic)</option>
-                      </select>
-                      <span className="mt-1 block text-[10px] text-ink-muted">
-                        {voiceProcessing
-                          ? 'The browser evens out level and cuts noise. Good for laptop mics.'
-                          : 'Nothing is applied before recording. Your gain is what you get.'}
-                      </span>
-                    </label>
-                  </div>
-                )}
-
+                {clipped && recording && <p role="status" className="recorder-warn">Clipping. Lower your microphone gain for the next take.</p>}
                 <span className="sr-only" role="status" aria-live="polite">{captureStatus}</span>
-
-                {takes.takes.length > 0 && !recording && (
-                  <div className="mt-4 rounded-xl border border-plum/20 bg-plum-soft p-3">
-                    <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
-                      <h3 className="font-semibold text-plum-dark">
-                        {takes.takes.length > 1 ? 'Your takes' : isProject ? 'Review your take' : 'Fresh preview'}
-                      </h3>
-                      <span className="truncate text-ink-muted">{audioFile?.name}</span>
-                    </div>
-
-                    {takes.takes.length > 1 && (
-                      <div className="mb-2.5 flex flex-wrap gap-1.5" role="group" aria-label="Recorded takes">
-                        {takes.takes.map((entry) => {
-                          const selected = entry.id === takes.activeId
-                          return (
-                            <button
-                              key={entry.id}
-                              type="button"
-                              onClick={() => chooseTake(entry.id)}
-                              aria-pressed={selected}
-                              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember ${
-                                selected
-                                  ? 'bg-plum text-white'
-                                  : 'border border-line-strong bg-canvas-raised text-ink hover:bg-canvas-soft'
-                              }`}
-                            >
-                              {takeLabel(takes, entry.id)}
-                              {entry.durationMs > 0 && (
-                                <span className="font-mono tabular-nums opacity-70">{formatElapsed(entry.durationMs)}</span>
-                              )}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {previewUrl && (
-                      <audio
-                        key={previewUrl}
-                        controls
-                        preload="metadata"
-                        src={previewUrl}
-                        className="h-10 w-full"
-                        aria-label={isProject ? 'Preview new project recording' : 'Preview inserted audio'}
-                      />
-                    )}
-
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      {previewUrl && audioFile && <a href={previewUrl} download={audioFile.name} className="text-[12px] font-semibold text-ember-dark">Download take</a>}
-                      <span className="text-[11px] text-ink-muted">
-                        {takes.takes.length > 1
-                          ? 'The selected take is the one that gets saved.'
-                          : 'Recording again keeps this take so you can compare.'}
-                      </span>
-                      {current && (
-                        <button
-                          type="button"
-                          onClick={() => discardOneTake(current.id)}
-                          disabled={saving}
-                          className="h-9 shrink-0 rounded-lg px-3 text-[12px] font-medium text-danger-dark hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
-                        >
-                          Discard {takes.takes.length > 1 ? takeLabel(takes, current.id) : 'take'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
               </section>
-              <p className="mt-3 text-[11px] text-ink-muted">{takes.takes.length}/{MAX_TAKES} takes kept in this session. Save or download important takes before closing. Earlier takes are never replaced by a new recording.</p>
+
+              <div className="recorder-setup">
+                <label htmlFor={`${titleId}-device`}>
+                  <span className="recorder-setup-label">Microphone</span>
+                  <select
+                    id={`${titleId}-device`}
+                    className="app-select"
+                    value={activeDeviceId}
+                    onChange={(event) => setDeviceId(event.target.value)}
+                    disabled={saving || starting || recording || checking}
+                  >
+                    <option value="">System default</option>
+                    {devices.map((device, index) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Microphone ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    {devices.length === 0
+                      ? 'Run a level check to list your inputs.'
+                      : devices.every((device) => !device.label)
+                        ? 'Names appear after you allow the microphone once.'
+                        : 'Remembered on this device.'}
+                  </small>
+                </label>
+                <label htmlFor={`${titleId}-processing`}>
+                  <span className="recorder-setup-label">Input processing</span>
+                  <select
+                    id={`${titleId}-processing`}
+                    className="app-select"
+                    value={voiceProcessing ? 'on' : 'off'}
+                    onChange={(event) => setVoiceProcessing(event.target.value === 'on')}
+                    disabled={saving || starting || recording || checking}
+                  >
+                    <option value="on">Clean up: noise suppression and auto gain</option>
+                    <option value="off">Raw input: your gain, nothing added</option>
+                  </select>
+                  <small>{voiceProcessing ? 'Good for laptop and headset mics.' : 'Best for an interface with its own gain.'}</small>
+                </label>
+                <div className="recorder-import">
+                  <span className="recorder-setup-label">Or use a file</span>
+                  <input
+                    ref={importRef}
+                    type="file"
+                    accept=".mp3,.wav,.m4a,.mp4,.aac,.ogg,.flac,.webm,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/x-m4a,audio/mp4,audio/aac,audio/ogg,application/ogg,audio/flac,audio/x-flac,audio/webm,video/webm,video/mp4"
+                    className="sr-only"
+                    onChange={importAudio}
+                    aria-label={isProject ? 'Import audio for new project' : 'Import insert audio'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => importRef.current?.click()}
+                    disabled={recording || starting || saving}
+                    className="recorder-secondary is-wide"
+                  >
+                    <UploadIcon className="h-4 w-4" />
+                    Import audio
+                  </button>
+                  <small>MP3, WAV, M4A, FLAC, AAC, OGG, MP4, WebM</small>
+                </div>
+              </div>
+
+              {takes.takes.length > 0 && !recording && (
+                <section className="recorder-takes" aria-label="Recorded takes">
+                  <div className="recorder-takes-head">
+                    <h3>{takes.takes.length > 1 ? 'Your takes' : 'Your take'}</h3>
+                    <span>{takes.takes.length}/{MAX_TAKES} kept · the selected take is the one that gets saved</span>
+                  </div>
+                  <div className="recorder-take-list" role="group" aria-label="Choose a take">
+                    {takes.takes.map((entry) => {
+                      const selected = entry.id === takes.activeId
+                      return (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          onClick={() => chooseTake(entry.id)}
+                          aria-pressed={selected}
+                          className={`recorder-take${selected ? ' is-on' : ''}`}
+                        >
+                          <span className="recorder-take-radio" aria-hidden="true" />
+                          <span className="recorder-take-name">{takeLabel(takes, entry.id)}</span>
+                          <span className="recorder-take-meta">
+                            {entry.durationMs > 0 ? formatElapsed(entry.durationMs) : entry.source === 'imported' ? 'file' : ''}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {previewUrl && (
+                    <audio
+                      key={previewUrl}
+                      controls
+                      preload="metadata"
+                      src={previewUrl}
+                      aria-label={isProject ? 'Preview new project recording' : 'Preview inserted audio'}
+                    />
+                  )}
+                  <div className="recorder-takes-foot">
+                    <span className="truncate">{audioFile?.name}</span>
+                    {previewUrl && audioFile && <a href={previewUrl} download={audioFile.name}>Download</a>}
+                    {current && (
+                      <button type="button" onClick={() => discardOneTake(current.id)} disabled={saving} className="review-btn is-ghost is-danger-text">
+                        Discard {takes.takes.length > 1 ? takeLabel(takes, current.id) : 'take'}
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {isProject ? (
-                <label className="mt-5 block" htmlFor={`${titleId}-project-name`}>
-                  <span className="flex items-center justify-between gap-3 text-[12px] font-semibold text-ink">
+                <label className="recorder-field" htmlFor={`${titleId}-project-name`}>
+                  <span className="recorder-field-label">
                     Project name
-                    <span className="font-normal tabular-nums text-ink-muted">{projectName.length}/{PROJECT_NAME_MAX_LENGTH}</span>
+                    <span>{projectName.length}/{PROJECT_NAME_MAX_LENGTH}</span>
                   </span>
                   <input
                     id={`${titleId}-project-name`}
@@ -1142,13 +1109,12 @@ export default function RecordingDialog(props: RecordingDialogProps) {
                     disabled={saving}
                     aria-label="Project name"
                     autoComplete="off"
-                    className="mt-2 h-11 w-full rounded-xl border border-line-strong bg-canvas-raised px-3.5 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-ember focus:ring-2 focus:ring-ember/20 disabled:opacity-60"
                   />
                 </label>
               ) : (
-                <label className="mt-5 block" htmlFor={`${titleId}-transcript`}>
-                  <span className="flex items-center justify-between gap-3 text-[12px] font-semibold text-ink">
-                    Spoken transcript <span className="font-normal tabular-nums text-ink-muted">{text.length}/500</span>
+                <label className="recorder-field" htmlFor={`${titleId}-transcript`}>
+                  <span className="recorder-field-label">
+                    Spoken transcript <span>{text.length}/500</span>
                   </span>
                   <textarea
                     id={`${titleId}-transcript`}
@@ -1157,37 +1123,27 @@ export default function RecordingDialog(props: RecordingDialogProps) {
                     value={text}
                     onChange={(event) => setText(event.target.value)}
                     disabled={saving}
-                    rows={4}
-                    placeholder="Type the words spoken in this insert..."
-                    className="mt-2 w-full resize-y rounded-xl border border-line-strong bg-canvas-raised px-3.5 py-3 text-sm leading-6 text-ink outline-none placeholder:text-ink-muted focus:border-ember focus:ring-2 focus:ring-ember/20 disabled:opacity-60"
+                    rows={3}
+                    placeholder="Type the words spoken in this insert…"
                   />
                 </label>
               )}
 
               {error && (
-                <div role="alert" className="mt-4 rounded-xl border border-danger/25 bg-danger-soft px-3.5 py-3 text-[12px] leading-5 text-danger-dark">
-                  {error}
-                </div>
+                <div role="alert" className="recorder-error">{error}</div>
               )}
             </div>
 
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-canvas-raised px-5 py-4">
-              <button
-                type="button"
-                onClick={requestClose}
-                disabled={saving}
-                className="h-10 rounded-lg px-4 text-[12px] font-medium text-ink-muted hover:bg-canvas-soft disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void save()}
-                disabled={saving || recording || starting || !audioFile || (isProject ? !projectName.trim() : !text.trim())}
-                    className="inline-flex h-10 min-w-28 items-center justify-center gap-2 rounded-lg bg-ember px-4 text-[12px] font-semibold text-on-accent hover:bg-ember-hover disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
-              >
+            <div className="recorder-foot">
+              <span className="recorder-foot-hint">
+                {!audioFile
+                  ? isProject ? 'Record or import a take to continue.' : 'Record or import the passage to continue.'
+                  : isProject ? 'Transcription runs on this computer after saving.' : ''}
+              </span>
+              <button type="button" onClick={requestClose} disabled={saving} className="review-btn is-ghost">Cancel</button>
+              <button type="button" onClick={() => void save()} disabled={!canSave} className="review-btn is-primary is-large">
                 {saving
-                  ? isProject ? 'Saving recording...' : 'Saving...'
+                  ? isProject ? 'Saving…' : 'Saving…'
                   : mode === 'project'
                     ? 'Save and transcribe'
                     : mode === 'replace'

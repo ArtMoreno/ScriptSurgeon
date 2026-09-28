@@ -375,6 +375,7 @@ def load_project(pid: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
             state.setdefault("cleanupKeepGapIds", [])
             state.setdefault("insertClips", [])
             state.setdefault("retakeGroups", [])
+            state.setdefault("retakeSensitivity", "balanced")
             # Per-gap timing is additive. Old projects retain the established
             # 300 ms pacing until the owner changes an individual pause.
             state.setdefault("gapPacing", {
@@ -584,6 +585,7 @@ def run_transcription(pid: str, audio_path: str) -> None:
                 "retakeGroups": [],
                 "cleanupKeepWordIds": [],
                 "cleanupKeepGapIds": [],
+                "retakeSensitivity": "balanced",
                 "insertClips": [],
                 "markers": [],
                 "revision": 1,
@@ -726,6 +728,8 @@ class WordState(BaseModel):
     # Faster-whisper exposes this only for some model/runtime combinations.
     # It is informational evidence for review, never an audio/VAD claim.
     asrConfidence: float | None = Field(default=None, ge=0, le=1)
+    # Set when the editor reworded the transcript text. Audio never changes.
+    originalText: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def ordered_times(self):
@@ -907,6 +911,8 @@ class StatePayload(BaseModel):
     retakeGroups: list[RetakeGroupState] = Field(default_factory=list, max_length=100_000)
     cleanupKeepWordIds: list[str] = Field(default_factory=list, max_length=500_000)
     cleanupKeepGapIds: list[str] = Field(default_factory=list, max_length=500_000)
+    # Which retake detection passes run. Review-only either way.
+    retakeSensitivity: Literal["strict", "balanced"] = "balanced"
     insertClips: list[InsertClipState] = Field(default_factory=list, max_length=MAX_INSERT_CLIPS)
     markers: list[MarkerState] = Field(default_factory=list, max_length=10_000)
     # Persisted states contain the server-owned revision. Accept it when reading
@@ -1478,6 +1484,8 @@ def save_state(pid: str, payload: StatePayload):
         # Preserve them for older clients that cannot present alternate takes.
         if "retakeGroups" not in payload.model_fields_set:
             state["retakeGroups"] = current.get("retakeGroups", [])
+        if "retakeSensitivity" not in payload.model_fields_set:
+            state["retakeSensitivity"] = current.get("retakeSensitivity", "balanced")
         # An older frontend must not erase recorded inserts it does not know
         # how to display. Explicit [] remains the undoable "clear all" action.
         if "insertClips" not in payload.model_fields_set:
@@ -1772,6 +1780,24 @@ def run_integration(pid: str, target_id: str):
         filename=f"{safe_name}.{target.extension}",
         background=BackgroundTask(shutil.rmtree, scratch, True),
     )
+
+
+class ProjectRenamePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=400)
+
+
+@app.patch("/api/projects/{pid}")
+def rename_project(pid: str, payload: ProjectRenamePayload):
+    """Change the display name only. Files, state and audio are untouched."""
+    directory = pdir(pid)
+    name = normalized_project_name(payload.name, None)
+    with project_lock(pid):
+        meta = read_json(meta_path(directory))
+        meta["name"] = name
+        atomic_json(meta_path(directory), meta)
+    return {"ok": True, "name": name}
 
 
 @app.delete("/api/projects/{pid}")

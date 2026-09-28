@@ -13,7 +13,6 @@ import { useIntegrations } from './lib/integrations'
 import { buildTimeline, editedTimeToSource, wordAtEditedTime } from './lib/timeline'
 import { gapTargetsFromEdits } from './lib/gapPacing'
 import { PRODUCT_NAME } from './lib/branding'
-import productIcon from './assets/scriptcut-icon.png'
 import { fmtTime } from './lib/timeline'
 import { sidebarProjectStatus } from './lib/transcriptionStatus'
 import {
@@ -28,7 +27,7 @@ import {
   type WorkspaceTheme,
 } from './lib/workspacePreferences'
 import type { InsertClip } from './types'
-import { AudioIcon, CheckIcon, CloseIcon, ScissorsIcon, SparklesIcon, UploadIcon } from './components/Icons'
+import { AudioIcon, BrandMark, CheckIcon, CloseIcon, EditIcon, ScissorsIcon, SparklesIcon, UploadIcon } from './components/Icons'
 
 type RecordingTarget =
   | { mode: 'create'; afterWordId: string | null; sourceTime: number; anchorLabel: string }
@@ -361,13 +360,20 @@ function WelcomeScreen({
 }) {
   const projects = useStore(state => state.projects)
   const openProject = useStore(state => state.openProject)
+  const renameProject = useStore(state => state.renameProject)
   const [query, setQuery] = useState('')
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
+  const commitRename = async () => {
+    const draft = renaming
+    setRenaming(null)
+    if (draft) await renameProject(draft.id, draft.name)
+  }
   const visibleProjects = projects.filter(project => project.name.toLowerCase().includes(query.trim().toLowerCase()))
   return (
     <section className="project-home flex-1 min-h-0 overflow-y-auto relative bg-canvas">
       <div className="relative min-h-full max-w-5xl mx-auto px-6 py-12 lg:py-16 flex flex-col">
         <div>
-          <div className="home-brand"><img src={productIcon} alt="" /><span>{PRODUCT_NAME}</span></div>
+          <div className="home-brand"><BrandMark size={48} /><span>{PRODUCT_NAME}</span></div>
           {!projects.length && <div className="inline-flex items-center gap-2 rounded-full border border-forest/25 bg-forest-soft px-3 py-1.5 text-[11px] font-medium text-forest-dark">
             <span className="h-1.5 w-1.5 rounded-full bg-forest" />
             Private, transcript-first audio editing
@@ -417,11 +423,40 @@ function WelcomeScreen({
           <input id="home-project-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by project name" />
           <p role="status">{visibleProjects.length} {visibleProjects.length === 1 ? 'project' : 'projects'} on this device</p>
           <div className="home-project-list">
-            {visibleProjects.map(project => <button key={project.id} onClick={() => void openProject(project.id).catch(() => undefined)}>
-              <AudioIcon className="h-6 w-6" />
-              <span><strong>{project.name}</strong><small>{sidebarProjectStatus(project, fmtTime(project.duration ?? 0)).label}</small></span>
-              <span className="home-open">Open</span>
-            </button>)}
+            {visibleProjects.map(project => (
+              <div key={project.id} className="home-project-row">
+                {renaming?.id === project.id ? (
+                  <div className="home-project-rename">
+                    <AudioIcon className="h-6 w-6" />
+                    <input
+                      autoFocus
+                      value={renaming.name}
+                      maxLength={160}
+                      aria-label={`Rename ${project.name}`}
+                      onChange={(e) => setRenaming({ id: project.id, name: e.target.value })}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); void commitRename() }
+                        else if (e.key === 'Escape') { e.preventDefault(); setRenaming(null) }
+                      }}
+                      onBlur={() => void commitRename()}
+                    />
+                    <small>Enter saves · Esc cancels</small>
+                  </div>
+                ) : (
+                  <>
+                    <button type="button" className="home-project-open" onClick={() => void openProject(project.id).catch(() => undefined)}>
+                      <AudioIcon className="h-6 w-6" />
+                      <span><strong>{project.name}</strong><small>{sidebarProjectStatus(project, fmtTime(project.duration ?? 0)).label}</small></span>
+                      <span className="home-open">Open</span>
+                    </button>
+                    <button type="button" className="home-project-rename-btn" aria-label={`Rename ${project.name}`} title="Rename" onClick={() => setRenaming({ id: project.id, name: project.name })}>
+                      <EditIcon className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
             {!visibleProjects.length && <p>No projects match “{query}”. Try another name.</p>}
           </div>
         </div>}

@@ -168,6 +168,13 @@ export const api = {
     ),
   deleteProject: (id: string, signal?: AbortSignal) =>
     req<{ ok: boolean }>(`/api/projects/${id}`, { method: 'DELETE', signal }),
+  renameProject: (id: string, name: string, signal?: AbortSignal) =>
+    req<{ ok: boolean; name: string }>(`/api/projects/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+      signal,
+    }),
   // Delivery integrations. The target list is served rather than compiled in,
   // so the picker only ever offers what this build can actually produce.
   getIntegrations: (signal?: AbortSignal) =>

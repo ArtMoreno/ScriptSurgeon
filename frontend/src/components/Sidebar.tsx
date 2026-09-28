@@ -4,7 +4,7 @@ import { fmtTime } from '../lib/timeline'
 import { sidebarProjectStatus } from '../lib/transcriptionStatus'
 import type { WorkspaceTheme } from '../lib/workspacePreferences'
 import productIcon from '../assets/scriptcut-icon.png'
-import { AudioIcon, CloseIcon, MoonIcon, SunIcon, UploadIcon } from './Icons'
+import { AudioIcon, CloseIcon, EditIcon, MoonIcon, SunIcon, UploadIcon } from './Icons'
 import { PRODUCT_NAME } from '../lib/branding'
 
 interface SidebarProps {
@@ -22,6 +22,7 @@ export default function Sidebar({ onRecordNewProject, theme, onToggleTheme }: Si
   const uploadFile = useStore((state) => state.uploadFile)
   const openProject = useStore((state) => state.openProject)
   const deleteProject = useStore((state) => state.deleteProject)
+  const renameProject = useStore((state) => state.renameProject)
   const closeProject = useStore((state) => state.closeProject)
   const [dragOver, setDragOver] = useState(false)
   const [filter, setFilter] = useState('')
@@ -194,6 +195,19 @@ export default function Sidebar({ onRecordNewProject, theme, onToggleTheme }: Si
                     {projectStatus.label}
                   </span>
                 </span>
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const next = window.prompt('Rename this project', project.name)
+                  if (next !== null) void renameProject(project.id, next)
+                }}
+                className="sidebar-copy h-7 w-7 grid place-items-center rounded-md text-charcoal-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-charcoal-hover hover:text-charcoal-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember max-md:hidden"
+                aria-label={`Rename ${project.name}`}
+                title="Rename"
+              >
+                <EditIcon className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
