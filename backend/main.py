@@ -711,7 +711,13 @@ async def require_desktop_token(request: Request, call_next):
         supplied = request.headers.get("X-ScriptCut-Token", "")
         if not hmac.compare_digest(token, supplied):
             return JSONResponse({"detail": "invalid desktop session"}, status_code=403)
-    return await call_next(request)
+    response = await call_next(request)
+    # The shell page must always be revalidated, or an upgraded build keeps
+    # showing the previous bundle from the web view's cache. Hashed assets
+    # under /assets/ stay cacheable.
+    if request.url.path in ("/", "/index.html"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
 class WordState(BaseModel):
