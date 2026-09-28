@@ -3,8 +3,7 @@ import { useStore } from '../store'
 import { fmtTime } from '../lib/timeline'
 import { sidebarProjectStatus } from '../lib/transcriptionStatus'
 import type { WorkspaceTheme } from '../lib/workspacePreferences'
-import productIcon from '../assets/scriptcut-icon.png'
-import { AudioIcon, CloseIcon, EditIcon, MoonIcon, SunIcon, UploadIcon } from './Icons'
+import { AudioIcon, BrandMark, CloseIcon, EditIcon, MoonIcon, SunIcon, UploadIcon } from './Icons'
 import { PRODUCT_NAME } from '../lib/branding'
 
 interface SidebarProps {
@@ -57,9 +56,7 @@ export default function Sidebar({ onRecordNewProject, theme, onToggleTheme }: Si
           className="flex items-center gap-3 min-w-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember"
           aria-label={`Go to ${PRODUCT_NAME} home`}
         >
-          <span className="h-9 w-9 shrink-0 overflow-hidden rounded-xl bg-ember shadow-lg shadow-black/25">
-            <img src={productIcon} alt="" className="h-full w-full object-cover" />
-          </span>
+          <BrandMark size={36} className="shrink-0" />
           <span className="sidebar-copy min-w-0 text-left max-md:hidden">
             <span className="block text-[15px] font-semibold tracking-tight text-charcoal-ink">{PRODUCT_NAME}</span>
             <span className="block text-[11px] text-charcoal-muted">Local audio workspace</span>
